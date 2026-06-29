@@ -1,0 +1,243 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+  STAFF
+  KITCHEN
+}
+
+enum OrderStatus {
+  PENDING
+  PREPARING
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH_ON_DELIVERY
+  BANK_TRANSFER
+}
+
+enum PaymentStatus {
+  PENDING
+  AWAITING_CONFIRMATION
+  CONFIRMED
+  REJECTED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  phone         String?
+  password      String
+  role          Role      @default(CUSTOMER)
+  isActive      Boolean   @default(true)
+  resetToken    String?
+  resetExpiry   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  orders        Order[]
+  favorites     Favorite[]
+  addresses     DeliveryAddress[]
+  notifications Notification[]
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  image       String?
+  isActive    Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+}
+
+model Product {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  description String?
+  price       Float     @default(0)
+  image       String?
+  categoryId  String
+  isActive    Boolean   @default(true)
+  inStock     Boolean   @default(true)
+  isFeatured  Boolean   @default(false)
+  hasVariants Boolean   @default(false)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  category    Category  @relation(fields: [categoryId], references: [id])
+  variants    ProductVariant[]
+  addons      ProductAddon[]
+  orderItems  OrderItem[]
+  favorites   Favorite[]
+}
+
+model ProductVariant {
+  id        String   @id @default(cuid())
+  productId String
+  name      String
+  price     Float
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+}
+
+model ProductAddon {
+  id        String   @id @default(cuid())
+  productId String
+  name      String
+  price     Float    @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model DeliveryZone {
+  id            String   @id @default(cuid())
+  name          String
+  deliveryFee   Float
+  estimatedTime String
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  areas         DeliveryArea[]
+  orders        Order[]
+}
+
+model DeliveryArea {
+  id        String       @id @default(cuid())
+  name      String
+  zoneId    String
+  createdAt DateTime     @default(now())
+  zone      DeliveryZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+}
+
+model DeliveryAddress {
+  id        String   @id @default(cuid())
+  userId    String
+  label     String?
+  address   String
+  area      String?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders    Order[]
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  orderNumber     String        @unique
+  userId          String
+  status          OrderStatus   @default(PENDING)
+  paymentMethod   PaymentMethod
+  paymentStatus   PaymentStatus @default(PENDING)
+  subtotal        Float
+  deliveryFee     Float
+  total           Float
+  deliveryAddress String
+  deliveryArea    String?
+  deliveryNotes   String?
+  zoneId          String?
+  addressId       String?
+  estimatedTime   String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  user            User          @relation(fields: [userId], references: [id])
+  zone            DeliveryZone? @relation(fields: [zoneId], references: [id])
+  address         DeliveryAddress? @relation(fields: [addressId], references: [id])
+  items           OrderItem[]
+  payment         Payment?
+  notifications   Notification[]
+}
+
+model OrderItem {
+  id          String          @id @default(cuid())
+  orderId     String
+  productId   String
+  variantId   String?
+  name        String
+  variantName String?
+  addons      String?
+  quantity    Int
+  unitPrice   Float
+  totalPrice  Float
+  createdAt   DateTime        @default(now())
+  order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product         @relation(fields: [productId], references: [id])
+  variant     ProductVariant? @relation(fields: [variantId], references: [id])
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  orderId     String        @unique
+  method      PaymentMethod
+  status      PaymentStatus @default(PENDING)
+  amount      Float
+  reference   String?
+  confirmedAt DateTime?
+  confirmedBy String?
+  notes       String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  order       Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  @@unique([userId, productId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?
+  orderId   String?
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  type      String   @default("info")
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order     Order?   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model RestaurantSettings {
+  id             String   @id @default(cuid())
+  name           String   @default("Food Palace Restaurant")
+  phone          String?
+  whatsapp       String?
+  email          String?
+  address        String?
+  openTime       String   @default("08:00")
+  closeTime      String   @default("22:00")
+  isOpen         Boolean  @default(true)
+  manualOverride Boolean  @default(false)
+  bankName       String   @default("MONIEPOINT MFB")
+  accountName    String   @default("USMAN SAMBO MARAFA")
+  accountNumber  String   @default("9110064364")
+  updatedAt      DateTime @updatedAt
+}
