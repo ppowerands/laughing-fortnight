@@ -236,8 +236,16 @@ model RestaurantSettings {
   closeTime      String   @default("22:00")
   isOpen         Boolean  @default(true)
   manualOverride Boolean  @default(false)
+  logo            String?
   bankName       String   @default("MONIEPOINT MFB")
   accountName    String   @default("USMAN SAMBO MARAFA")
   accountNumber  String   @default("9110064364")
   updatedAt      DateTime @updatedAt
+}
+
+model SiteContent {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
 }

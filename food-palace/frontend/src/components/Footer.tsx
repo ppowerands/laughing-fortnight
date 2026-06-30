@@ -1,10 +1,23 @@
 'use client';
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import { ChefHat, Phone, Mail, MapPin, MessageCircle } from 'lucide-react';
+import { contentApi, settingsApi } from '@/lib/api';
 
 export default function Footer() {
   const whatsapp = process.env.NEXT_PUBLIC_WHATSAPP || '+2348000000000';
   const waLink = `https://wa.me/${whatsapp.replace(/[^0-9]/g, '')}?text=Hello%20Food%20Palace%2C%20I%20need%20help.`;
+
+  const { data: content } = useQuery({
+    queryKey: ['site-content'],
+    queryFn: () => contentApi.get().then(r => r.data),
+    staleTime: 0,
+  });
+  const { data: settings } = useQuery({
+    queryKey: ['restaurant-settings'],
+    queryFn: () => settingsApi.get().then(r => r.data),
+    staleTime: 0,
+  });
 
   return (
     <footer className="bg-gray-900 text-gray-300 mt-20">
@@ -16,12 +29,12 @@ export default function Footer() {
                 <ChefHat className="w-6 h-6 text-white" />
               </div>
               <div>
-                <span className="block text-base font-black text-white">FOOD PALACE</span>
+                <span className="block text-base font-black text-white">{settings?.name?.toUpperCase() || 'FOOD PALACE'}</span>
                 <span className="block text-xs text-gray-400 tracking-widest uppercase">Restaurant</span>
               </div>
             </Link>
             <p className="text-sm text-gray-400 max-w-xs leading-relaxed mb-4">
-              Bringing you the finest Nigerian cuisine with love and dedication. Every meal crafted to perfection.
+              {content?.footer_description || 'Bringing you the finest Nigerian cuisine with love and dedication. Every meal crafted to perfection.'}
             </p>
             <a href={waLink} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors">
@@ -43,22 +56,22 @@ export default function Footer() {
             <ul className="space-y-3">
               <li className="flex items-start gap-2 text-sm text-gray-400">
                 <MapPin className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
-                <span>Kaduna, Nigeria</span>
+                <span>{settings?.address || 'Kaduna, Nigeria'}</span>
               </li>
               <li className="flex items-center gap-2 text-sm text-gray-400">
                 <Phone className="w-4 h-4 text-blue-400 shrink-0" />
-                <a href="tel:+2348000000000" className="hover:text-white transition-colors">+234 800 000 0000</a>
+                <a href={`tel:${settings?.phone || '+2348000000000'}`} className="hover:text-white transition-colors">{settings?.phone || '+234 800 000 0000'}</a>
               </li>
               <li className="flex items-center gap-2 text-sm text-gray-400">
                 <Mail className="w-4 h-4 text-blue-400 shrink-0" />
-                <a href="mailto:info@foodpalace.ng" className="hover:text-white transition-colors">info@foodpalace.ng</a>
+                <a href={`mailto:${settings?.email || 'info@foodpalace.ng'}`} className="hover:text-white transition-colors">{settings?.email || 'info@foodpalace.ng'}</a>
               </li>
             </ul>
           </div>
         </div>
 
         <div className="border-t border-gray-700 mt-10 pt-6 text-center">
-          <p className="text-xs text-gray-500">© {new Date().getFullYear()} Food Palace Restaurant. All rights reserved.</p>
+          <p className="text-xs text-gray-500">© {new Date().getFullYear()} {settings?.name || 'Food Palace Restaurant'}. All rights reserved.</p>
         </div>
       </div>
 

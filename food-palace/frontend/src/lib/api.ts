@@ -109,3 +109,9 @@ export const uploadApi = {
     return api.post('/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
 };
+
+
+export const contentApi = {
+  get: () => api.get('/content'),
+  update: (data: any) => api.put('/content', data),
+};

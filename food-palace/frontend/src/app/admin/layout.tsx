@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, ShoppingBag, UtensilsCrossed, Tags, Truck, Settings, Users, LogOut, Menu, X, Bell, ChefHat, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, ShoppingBag, UtensilsCrossed, Tags, Truck, Settings, Users, LogOut, Menu, X, Bell, ChefHat, BarChart3, FileText } from 'lucide-react';
 import { useAuthStore } from '@/lib/auth-store';
 import { adminApi } from '@/lib/api';
 import { useQuery } from '@tanstack/react-query';
@@ -14,6 +14,7 @@ const navItems = [
   { href: '/admin/categories', label: 'Categories', icon: Tags },
   { href: '/admin/delivery', label: 'Delivery Zones', icon: Truck },
   { href: '/admin/users', label: 'Customers', icon: Users },
+  { href: '/admin/content', label: 'Website Content', icon: FileText },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];
 

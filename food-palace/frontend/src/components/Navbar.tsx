@@ -2,9 +2,11 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ShoppingCart, Menu, X, User, Heart, Search, ChefHat } from 'lucide-react';
+import { ShoppingCart, Menu, X, User, Heart, ChefHat } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useCartStore } from '@/lib/cart-store';
 import { useAuthStore } from '@/lib/auth-store';
+import { settingsApi } from '@/lib/api';
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
@@ -13,6 +15,15 @@ export default function Navbar() {
   const { user, isAuthenticated, logout } = useAuthStore();
   const pathname = usePathname();
   const count = itemCount();
+
+  const { data: settings } = useQuery({
+    queryKey: ['restaurant-settings'],
+    queryFn: () => settingsApi.get().then(r => r.data),
+    staleTime: 0,
+  });
+
+  const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000';
+  const logoUrl = settings?.logo ? (settings.logo.startsWith('http') ? settings.logo : `${API_URL}${settings.logo}`) : null;
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -32,11 +43,11 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 md:h-20">
           <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-9 h-9 bg-blue-700 rounded-xl flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
-              <ChefHat className="w-5 h-5 text-white" />
+            <div className="w-9 h-9 bg-blue-700 rounded-xl flex items-center justify-center shadow-md group-hover:scale-105 transition-transform overflow-hidden">
+              {logoUrl ? <img src={logoUrl} alt="Logo" className="w-full h-full object-cover" /> : <ChefHat className="w-5 h-5 text-white" />}
             </div>
             <div className="leading-tight">
-              <span className="block text-sm font-black text-blue-700">FOOD PALACE</span>
+              <span className="block text-sm font-black text-blue-700">{settings?.name?.toUpperCase() || 'FOOD PALACE'}</span>
               <span className="block text-[10px] text-slate-500 dark:text-slate-400 tracking-widest uppercase">Restaurant</span>
             </div>
           </Link>
@@ -51,6 +62,11 @@ export default function Navbar() {
           </div>
 
           <div className="flex items-center gap-2">
+            {isAuthenticated && (
+              <Link href="/favorites" className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors hidden md:flex">
+                <Heart className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </Link>
+            )}
             <Link href="/cart" className="relative p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
               <ShoppingCart className="w-5 h-5 text-gray-700 dark:text-gray-200" />
               {count > 0 && (
@@ -113,6 +129,7 @@ export default function Navbar() {
                 <>
                   <Link href="/profile" onClick={() => setOpen(false)} className="block px-4 py-3 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300">Profile</Link>
                   <Link href="/orders" onClick={() => setOpen(false)} className="block px-4 py-3 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300">My Orders</Link>
+                  <Link href="/favorites" onClick={() => setOpen(false)} className="block px-4 py-3 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300">Favorites</Link>
                   {user?.role !== 'CUSTOMER' && <Link href="/admin" onClick={() => setOpen(false)} className="block px-4 py-3 rounded-xl text-sm font-medium text-blue-700">Admin Dashboard</Link>}
                   <button onClick={() => { logout(); setOpen(false); }} className="w-full text-left px-4 py-3 rounded-xl text-sm font-medium text-red-600">Logout</button>
                 </>

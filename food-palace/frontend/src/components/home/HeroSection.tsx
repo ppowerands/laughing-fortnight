@@ -1,8 +1,16 @@
 'use client';
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import { ChevronRight, Star, Clock, Truck } from 'lucide-react';
+import { contentApi } from '@/lib/api';
 
 export default function HeroSection() {
+  const { data: content } = useQuery({
+    queryKey: ['site-content'],
+    queryFn: () => contentApi.get().then(r => r.data),
+    staleTime: 0,
+  });
+
   return (
     <section className="relative min-h-screen flex items-center overflow-hidden bg-gradient-to-br from-blue-950 via-blue-900 to-slate-900">
       <div className="absolute inset-0 opacity-10">
@@ -15,17 +23,17 @@ export default function HeroSection() {
           <div className="text-center lg:text-left">
             <div className="inline-flex items-center gap-2 bg-blue-800/50 border border-blue-700/50 rounded-full px-4 py-1.5 mb-6">
               <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-              <span className="text-blue-200 text-sm font-medium">Open Now • Fast Delivery</span>
+              <span className="text-blue-200 text-sm font-medium">{content?.hero_badge || 'Open Now • Fast Delivery'}</span>
             </div>
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white leading-tight mb-6">
-              Authentic{' '}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-300 to-sky-300">Nigerian</span>{' '}
-              Cuisine
+              {content?.hero_heading_1 || 'Authentic'}{' '}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-300 to-sky-300">{content?.hero_heading_2 || 'Nigerian'}</span>{' '}
+              {content?.hero_heading_3 || 'Cuisine'}
             </h1>
 
             <p className="text-blue-200 text-lg mb-8 max-w-lg mx-auto lg:mx-0 leading-relaxed">
-              From smoky Jollof Rice to fresh Shawarmas — order your favourite Nigerian meals and get them delivered hot to your door.
+              {content?.hero_description || 'From smoky Jollof Rice to fresh Shawarmas — order your favourite Nigerian meals and get them delivered hot to your door.'}
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start mb-10">

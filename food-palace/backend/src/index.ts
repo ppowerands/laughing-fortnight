@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import path from 'path';
 import authRoutes from './routes/auth';
 import productRoutes from './routes/products';
 import categoryRoutes from './routes/categories';
@@ -11,6 +10,7 @@ import deliveryRoutes from './routes/delivery';
 import uploadRoutes from './routes/upload';
 import settingsRoutes from './routes/settings';
 import userRoutes from './routes/users';
+import contentRoutes from './routes/content';
 
 dotenv.config();
 
@@ -40,6 +40,7 @@ app.use('/api/delivery', deliveryRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/content', contentRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Route not found' }));
 
