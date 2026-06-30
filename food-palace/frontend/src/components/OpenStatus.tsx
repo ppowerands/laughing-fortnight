@@ -7,7 +7,8 @@ export default function OpenStatus() {
   const { data: settings } = useQuery({
     queryKey: ['restaurant-settings'],
     queryFn: () => settingsApi.get().then(r => r.data),
-    refetchInterval: 60000,
+    refetchInterval: 15000,
+    staleTime: 0,
   });
 
   if (!settings) return null;
