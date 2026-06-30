@@ -115,3 +115,8 @@ export const contentApi = {
   get: () => api.get('/content'),
   update: (data: any) => api.put('/content', data),
 };
+
+
+export const adminAccountApi = {
+  update: (data: any) => api.put('/admin/account', data),
+};

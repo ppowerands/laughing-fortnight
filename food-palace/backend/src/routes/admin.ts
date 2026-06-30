@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
+import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
-import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth';
+import { authenticate, requireAdmin, requireSuperAdmin, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -67,6 +68,38 @@ router.patch('/notifications/read-all', authenticate, requireAdmin, async (req: 
   try {
     await prisma.notification.updateMany({ where: { userId: null, isRead: false }, data: { isRead: true } });
     res.json({ message: 'All marked as read' });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// Update own admin account (email/password)
+router.put('/account', authenticate, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { email, currentPassword, newPassword } = req.body;
+    const admin = await prisma.user.findUnique({ where: { id: req.user!.id } });
+    if (!admin) return res.status(404).json({ error: 'Account not found' });
+
+    if (currentPassword) {
+      const valid = await bcrypt.compare(currentPassword, admin.password);
+      if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    const updateData: any = {};
+    if (email && email !== admin.email) {
+      const existing = await prisma.user.findUnique({ where: { email } });
+      if (existing) return res.status(400).json({ error: 'Email already in use' });
+      updateData.email = email;
+    }
+    if (newPassword) {
+      if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+      updateData.password = await bcrypt.hash(newPassword, 12);
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: req.user!.id },
+      data: updateData,
+      select: { id: true, name: true, email: true, role: true },
+    });
+    res.json(updated);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 

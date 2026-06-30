@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { MapPin, CreditCard, Banknote, CheckCircle, Clock } from 'lucide-react';
+import { MapPin, CreditCard, CheckCircle, Clock } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import { useCartStore } from '@/lib/cart-store';
 import { useAuthStore } from '@/lib/auth-store';
@@ -18,9 +18,9 @@ export default function CheckoutPage() {
   const [selectedArea, setSelectedArea] = useState('');
   const [address, setAddress] = useState('');
   const [deliveryNotes, setDeliveryNotes] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'CASH_ON_DELIVERY' | 'BANK_TRANSFER'>('CASH_ON_DELIVERY');
   const [loading, setLoading] = useState(false);
   const cartTotal = total();
+  const paymentMethod = 'BANK_TRANSFER';
 
   const { data: zones = [] } = useQuery({ queryKey: ['delivery-zones'], queryFn: () => deliveryApi.getZones().then(r => r.data) });
   const { data: settings } = useQuery({ queryKey: ['restaurant-settings'], queryFn: () => settingsApi.get().then(r => r.data) });
@@ -54,7 +54,7 @@ export default function CheckoutPage() {
       });
       clearCart();
       toast.success('Order placed successfully!');
-      router.push(`/orders/${res.data.id}?${paymentMethod === 'BANK_TRANSFER' ? 'payment=bank-transfer' : 'success=true'}`);
+      router.push(`/orders/${res.data.id}?payment=bank-transfer`);
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Failed to place order');
     } finally { setLoading(false); }
@@ -124,38 +124,15 @@ export default function CheckoutPage() {
               <h2 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                 <CreditCard className="w-5 h-5 text-blue-700" /> Payment Method
               </h2>
-              <div className="space-y-3">
-                {[
-                  { value: 'CASH_ON_DELIVERY', label: 'Cash on Delivery', desc: 'Pay when your order arrives', icon: Banknote },
-                  { value: 'BANK_TRANSFER', label: 'Bank Transfer', desc: 'Transfer to our Moniepoint account', icon: CreditCard },
-                ].map(({ value, label, desc, icon: Icon }) => (
-                  <label key={value} className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === value ? 'border-blue-700 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-600'}`}>
-                    <input type="radio" name="payment" value={value} checked={paymentMethod === value} onChange={() => setPaymentMethod(value as any)} className="sr-only" />
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${paymentMethod === value ? 'bg-blue-700' : 'bg-gray-100 dark:bg-gray-700'}`}>
-                      <Icon className={`w-5 h-5 ${paymentMethod === value ? 'text-white' : 'text-gray-600 dark:text-gray-300'}`} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-semibold text-gray-900 dark:text-white text-sm">{label}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{desc}</p>
-                    </div>
-                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${paymentMethod === value ? 'border-blue-700 bg-blue-700' : 'border-gray-300'}`}>
-                      {paymentMethod === value && <div className="w-2 h-2 bg-white rounded-full" />}
-                    </div>
-                  </label>
-                ))}
-              </div>
-
-              {paymentMethod === 'BANK_TRANSFER' && (
-                <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
-                  <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-3 uppercase tracking-wide">Bank Details</p>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm"><span className="text-gray-500">Bank Name:</span><span className="font-bold text-gray-900 dark:text-white">MONIEPOINT MFB</span></div>
-                    <div className="flex justify-between text-sm"><span className="text-gray-500">Account Name:</span><span className="font-bold text-gray-900 dark:text-white">USMAN SAMBO MARAFA</span></div>
-                    <div className="flex justify-between text-sm"><span className="text-gray-500">Account Number:</span><span className="font-bold text-blue-700 dark:text-blue-400 text-lg tracking-widest">9110064364</span></div>
-                  </div>
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-3">After placing order, transfer the exact amount then tap I Have Made Payment</p>
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+                <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-3 uppercase tracking-wide">Bank Transfer Details</p>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm"><span className="text-gray-500">Bank Name:</span><span className="font-bold text-gray-900 dark:text-white">{settings?.bankName || 'MONIEPOINT MFB'}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-500">Account Name:</span><span className="font-bold text-gray-900 dark:text-white">{settings?.accountName || 'USMAN SAMBO MARAFA'}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-500">Account Number:</span><span className="font-bold text-blue-700 dark:text-blue-400 text-lg tracking-widest">{settings?.accountNumber || '9110064364'}</span></div>
                 </div>
-              )}
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-3">After placing order, transfer the exact amount then tap I Have Made Payment</p>
+              </div>
             </div>
           </div>
 
