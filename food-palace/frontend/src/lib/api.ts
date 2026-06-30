@@ -66,6 +66,7 @@ export const ordersApi = {
   getMyOrders: () => api.get('/orders/my'),
   getOne: (id: string) => api.get(`/orders/${id}`),
   markPaymentMade: (id: string) => api.patch(`/orders/${id}/payment-made`),
+  cancel: (id: string) => api.patch(`/orders/${id}/cancel`),
   getAll: (params?: any) => api.get('/orders', { params }),
   updateStatus: (id: string, status: string) => api.patch(`/orders/${id}/status`, { status }),
   updatePayment: (id: string, data: any) => api.patch(`/orders/${id}/payment`, data),

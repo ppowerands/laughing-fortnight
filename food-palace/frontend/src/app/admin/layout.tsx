@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, ShoppingBag, UtensilsCrossed, Tags, Truck, Settings, Users, LogOut, Menu, X, Bell, ChefHat, BarChart3, FileText } from 'lucide-react';
+import { LayoutDashboard, ShoppingBag, UtensilsCrossed, Tags, Truck, Settings, Users, LogOut, Menu, X, Bell, ChefHat, BarChart3, FileText, UserCircle } from 'lucide-react';
 import { useAuthStore } from '@/lib/auth-store';
 import { adminApi } from '@/lib/api';
 import { useQuery } from '@tanstack/react-query';
@@ -16,6 +16,7 @@ const navItems = [
   { href: '/admin/users', label: 'Customers', icon: Users },
   { href: '/admin/content', label: 'Website Content', icon: FileText },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
+  { href: '/admin/profile', label: 'My Profile', icon: UserCircle },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -59,7 +60,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </button>
         </div>
 
-        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+        <Link href="/admin/profile" className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-blue-700 rounded-full flex items-center justify-center">
               <span className="text-white text-sm font-bold">{user?.name?.[0]}</span>
@@ -69,7 +70,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <p className="text-xs text-gray-400 capitalize">{user?.role?.toLowerCase()}</p>
             </div>
           </div>
-        </div>
+        </Link>
 
         <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
           {navItems.map(({ href, label, icon: Icon, exact }) => (

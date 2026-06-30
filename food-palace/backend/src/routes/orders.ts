@@ -5,8 +5,9 @@ import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth';
 const router = Router();
 const prisma = new PrismaClient();
 
-function generateOrderNumber() {
-  return 'FP' + Date.now().toString().slice(-8) + Math.floor(Math.random() * 100);
+async function generateOrderNumber() {
+  const count = await prisma.order.count();
+  return `FP${String(count + 1).padStart(4, '0')}`;
 }
 
 router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
@@ -36,16 +37,22 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       orderItems.push({ productId: product.id, variantId: item.variantId || null, name: product.name, variantName, addons: item.addons ? JSON.stringify(item.addons) : null, quantity: item.quantity, unitPrice, totalPrice });
     }
     const total = subtotal + deliveryFee;
+    const orderNumber = await generateOrderNumber();
+
+    // Auto-cancel timer: 30 minutes for bank transfer if payment not confirmed
+    const autoCancel = paymentMethod === 'BANK_TRANSFER' ? new Date(Date.now() + 30 * 60 * 1000) : null;
+
     const order = await prisma.order.create({
       data: {
-        orderNumber: generateOrderNumber(),
+        orderNumber,
         userId: req.user!.id,
         paymentMethod,
         subtotal, deliveryFee, total,
         deliveryAddress, deliveryArea, deliveryNotes,
         zoneId: zoneId || null, estimatedTime,
+        autoCancelAt: autoCancel,
         items: { create: orderItems },
-        payment: { create: { method: paymentMethod, amount: total, status: paymentMethod === 'CASH_ON_DELIVERY' ? 'PENDING' : 'AWAITING_CONFIRMATION' } },
+        payment: { create: { method: paymentMethod, amount: total, status: 'AWAITING_CONFIRMATION' } },
       },
       include: { items: true, payment: true, zone: true },
     });
@@ -56,6 +63,11 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 
 router.get('/my', authenticate, async (req: AuthRequest, res: Response) => {
   try {
+    // Auto-cancel expired unpaid bank transfer orders
+    await prisma.order.updateMany({
+      where: { autoCancelAt: { lt: new Date() }, paymentStatus: 'AWAITING_CONFIRMATION', status: { not: 'CANCELLED' } },
+      data: { status: 'CANCELLED', paymentStatus: 'REJECTED' },
+    });
     const orders = await prisma.order.findMany({ where: { userId: req.user!.id }, include: { items: true, payment: true, zone: true }, orderBy: { createdAt: 'desc' } });
     res.json(orders);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -82,8 +94,24 @@ router.patch('/:id/payment-made', authenticate, async (req: AuthRequest, res: Re
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+router.patch('/:id/cancel', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const order = await prisma.order.findFirst({ where: { id: req.params.id, userId: req.user!.id } });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.status === 'DELIVERED' || order.status === 'OUT_FOR_DELIVERY') {
+      return res.status(400).json({ error: 'This order can no longer be cancelled' });
+    }
+    await prisma.order.update({ where: { id: order.id }, data: { status: 'CANCELLED' } });
+    res.json({ message: 'Order cancelled' });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 router.get('/', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
+    await prisma.order.updateMany({
+      where: { autoCancelAt: { lt: new Date() }, paymentStatus: 'AWAITING_CONFIRMATION', status: { not: 'CANCELLED' } },
+      data: { status: 'CANCELLED', paymentStatus: 'REJECTED' },
+    });
     const { status, paymentStatus, page = '1', limit = '20' } = req.query;
     const where: any = {};
     if (status) where.status = status;
@@ -110,7 +138,7 @@ router.patch('/:id/payment', authenticate, requireAdmin, async (req: AuthRequest
     const order = await prisma.order.findUnique({ where: { id: req.params.id } });
     if (!order) return res.status(404).json({ error: 'Order not found' });
     await prisma.payment.update({ where: { orderId: order.id }, data: { status: status as PaymentStatus, confirmedBy: req.user!.id, confirmedAt: status === 'CONFIRMED' ? new Date() : null, notes } });
-    await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: status as PaymentStatus, ...(status === 'CONFIRMED' ? { status: 'PREPARING' } : {}) } });
+    await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: status as PaymentStatus, autoCancelAt: null, ...(status === 'CONFIRMED' ? { status: 'PREPARING' } : {}) } });
     await prisma.notification.create({ data: { userId: order.userId, orderId: order.id, title: status === 'CONFIRMED' ? 'Payment Confirmed' : 'Payment Rejected', message: status === 'CONFIRMED' ? `Payment for order #${order.orderNumber} confirmed!` : `Payment for order #${order.orderNumber} was rejected. ${notes || ''}`, type: 'payment' } });
     res.json({ message: `Payment ${status.toLowerCase()}` });
   } catch (err: any) { res.status(500).json({ error: err.message }); }

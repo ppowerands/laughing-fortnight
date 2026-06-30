@@ -116,6 +116,7 @@ model DeliveryZone {
   name          String
   deliveryFee   Float
   estimatedTime String
+  autoCancelAt    DateTime?
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -160,6 +161,7 @@ model Order {
   zoneId          String?
   addressId       String?
   estimatedTime   String?
+  autoCancelAt    DateTime?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   user            User          @relation(fields: [userId], references: [id])
