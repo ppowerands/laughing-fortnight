@@ -9,8 +9,14 @@ const api = axios.create({
 
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('fp_token');
-    if (token) config.headers.Authorization = `Bearer ${token}`;
+    try {
+      const authData = localStorage.getItem('food-palace-auth');
+      if (authData) {
+        const parsed = JSON.parse(authData);
+        const token = parsed?.state?.token;
+        if (token) config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch {}
   }
   return config;
 });
@@ -18,11 +24,6 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401 && typeof window !== 'undefined') {
-      localStorage.removeItem('fp_token');
-      localStorage.removeItem('fp_user');
-      window.location.href = '/login';
-    }
     return Promise.reject(err);
   }
 );
@@ -111,12 +112,10 @@ export const uploadApi = {
   },
 };
 
-
 export const contentApi = {
   get: () => api.get('/content'),
   update: (data: any) => api.put('/content', data),
 };
-
 
 export const adminAccountApi = {
   update: (data: any) => api.put('/admin/account', data),

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 interface User {
   id: string;
@@ -25,21 +25,18 @@ export const useAuthStore = create<AuthStore>()(
       token: null,
       isAuthenticated: false,
       setAuth: (user, token) => {
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('fp_token', token);
-        }
         set({ user, token, isAuthenticated: true });
       },
       logout: () => {
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('fp_token');
-        }
         set({ user: null, token: null, isAuthenticated: false });
       },
       updateUser: (updates) => set((state) => ({
         user: state.user ? { ...state.user, ...updates } : null,
       })),
     }),
-    { name: 'food-palace-auth' }
+    {
+      name: 'food-palace-auth',
+      storage: createJSONStorage(() => localStorage),
+    }
   )
 );
