@@ -7,16 +7,38 @@ import { authApi } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
 import toast from 'react-hot-toast';
 
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isValidPhone(phone: string) {
+  return /^(\+?234|0)[789][01]\d{8}$/.test(phone.replace(/\s/g, ''));
+}
+
 export default function RegisterPage() {
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '' });
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const { setAuth } = useAuthStore();
   const router = useRouter();
 
+  const validate = () => {
+    const newErrors: Record<string, string> = {};
+    if (!form.name.trim()) newErrors.name = 'Full name is required';
+    else if (form.name.trim().length < 2) newErrors.name = 'Name must be at least 2 characters';
+    if (!form.email.trim()) newErrors.email = 'Email address is required';
+    else if (!isValidEmail(form.email)) newErrors.email = 'Please enter a valid email address';
+    if (form.phone.trim() && !isValidPhone(form.phone)) newErrors.phone = 'Enter a valid Nigerian number (e.g. 08012345678)';
+    if (!form.password) newErrors.password = 'Password is required';
+    else if (form.password.length < 6) newErrors.password = 'Password must be at least 6 characters';
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (form.password.length < 6) return toast.error('Password must be at least 6 characters');
+    if (!validate()) return;
     setLoading(true);
     try {
       const res = await authApi.register(form);
@@ -47,39 +69,43 @@ export default function RegisterPage() {
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Full Name</label>
               <div className="relative">
                 <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input type="text" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                  required placeholder="Enter your full name" className="input pl-11" />
+                <input type="text" value={form.name} onChange={e => { setForm(p => ({ ...p, name: e.target.value })); setErrors(er => ({ ...er, name: '' })); }}
+                  placeholder="Enter your full name" className={`input pl-11 ${errors.name ? 'border-red-400' : ''}`} />
               </div>
+              {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
             </div>
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Email Address</label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
-                  required placeholder="Enter your email" className="input pl-11" />
+                <input type="email" value={form.email} onChange={e => { setForm(p => ({ ...p, email: e.target.value })); setErrors(er => ({ ...er, email: '' })); }}
+                  placeholder="Enter your email" className={`input pl-11 ${errors.email ? 'border-red-400' : ''}`} />
               </div>
+              {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Phone Number</label>
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Phone Number <span className="text-gray-400 font-normal">(optional)</span></label>
               <div className="relative">
                 <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input type="tel" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
-                  placeholder="Enter your phone number" className="input pl-11" />
+                <input type="tel" value={form.phone} onChange={e => { setForm(p => ({ ...p, phone: e.target.value })); setErrors(er => ({ ...er, phone: '' })); }}
+                  placeholder="Enter your phone number" className={`input pl-11 ${errors.phone ? 'border-red-400' : ''}`} />
               </div>
+              {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
             </div>
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Password</label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input type={showPass ? 'text' : 'password'} value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
-                  required placeholder="Create a password" className="input pl-11 pr-11" />
+                <input type={showPass ? 'text' : 'password'} value={form.password} onChange={e => { setForm(p => ({ ...p, password: e.target.value })); setErrors(er => ({ ...er, password: '' })); }}
+                  placeholder="Create a password" className={`input pl-11 pr-11 ${errors.password ? 'border-red-400' : ''}`} />
                 <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                   {showPass ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
+              {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password}</p>}
             </div>
 
             <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2 !mt-6">

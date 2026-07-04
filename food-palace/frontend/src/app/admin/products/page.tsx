@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Edit, Trash2, Search, X, Layers } from 'lucide-react';
-import { productsApi, categoriesApi, uploadApi } from '@/lib/api';
+import { productsApi, categoriesApi } from '@/lib/api';
 import toast from 'react-hot-toast';
 
 export default function AdminProductsPage() {
@@ -12,7 +12,6 @@ export default function AdminProductsPage() {
   const [form, setForm] = useState({ name: '', description: '', price: '', categoryId: '', image: '', hasVariants: false, isFeatured: false });
   const [variants, setVariants] = useState<{ id?: string; name: string; price: string }[]>([]);
   const [addons, setAddons] = useState<{ id?: string; name: string; price: string }[]>([]);
-  const [uploading, setUploading] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: products = [], isLoading } = useQuery({ queryKey: ['admin-products'], queryFn: () => productsApi.getAll().then(r => r.data) });
@@ -23,32 +22,19 @@ export default function AdminProductsPage() {
       let product;
       if (editProduct) {
         product = await productsApi.update(editProduct.id, data);
+        for (const v of variants) {
+          if (v.id) await productsApi.updateVariant(v.id, { name: v.name, price: v.price });
+          else if (v.name) await productsApi.addVariant(editProduct.id, { name: v.name, price: v.price });
+        }
+        for (const a of addons) {
+          if (!a.id && a.name) await productsApi.addAddon(editProduct.id, { name: a.name, price: a.price });
+        }
       } else {
         product = await productsApi.create({ ...data, variants: variants.filter(v => v.name), addons: addons.filter(a => a.name) });
-        return product;
-      }
-
-      // Sync variants for existing product
-      for (const v of variants) {
-        if (v.id) {
-          await productsApi.updateVariant(v.id, { name: v.name, price: v.price });
-        } else if (v.name) {
-          await productsApi.addVariant(editProduct.id, { name: v.name, price: v.price });
-        }
-      }
-      // Sync addons for existing product
-      for (const a of addons) {
-        if (!a.id && a.name) {
-          await productsApi.addAddon(editProduct.id, { name: a.name, price: a.price });
-        }
       }
       return product;
     },
-    onSuccess: () => {
-      toast.success(editProduct ? 'Product updated!' : 'Product created!');
-      queryClient.invalidateQueries({ queryKey: ['admin-products'] });
-      closeModal();
-    },
+    onSuccess: () => { toast.success(editProduct ? 'Product updated!' : 'Product created!'); queryClient.invalidateQueries({ queryKey: ['admin-products'] }); closeModal(); },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Failed to save product'),
   });
 
@@ -60,7 +46,7 @@ export default function AdminProductsPage() {
 
   const deleteVariantMutation = useMutation({
     mutationFn: (id: string) => productsApi.deleteVariant(id),
-    onSuccess: () => { toast.success('Variant removed'); queryClient.invalidateQueries({ queryKey: ['admin-products'] }); },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-products'] }),
   });
 
   const stockMutation = useMutation({
@@ -82,35 +68,18 @@ export default function AdminProductsPage() {
     setVariants([]); setAddons([]);
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const res = await uploadApi.uploadImage(file);
-      setForm(f => ({ ...f, image: res.data.url }));
-      toast.success('Image uploaded!');
-    } catch { toast.error('Image upload failed'); }
-    finally { setUploading(false); }
-  };
-
   const addVariantRow = () => setVariants(v => [...v, { name: '', price: '' }]);
-  const updateVariantRow = (i: number, field: 'name' | 'price', val: string) => {
-    setVariants(v => v.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
-  };
+  const updateVariantRow = (i: number, field: 'name' | 'price', val: string) => setVariants(v => v.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
   const removeVariantRow = (i: number) => {
     const variant = variants[i];
-    if (variant.id) { deleteVariantMutation.mutate(variant.id); }
+    if (variant.id) deleteVariantMutation.mutate(variant.id);
     setVariants(v => v.filter((_, idx) => idx !== i));
   };
 
   const addAddonRow = () => setAddons(a => [...a, { name: '', price: '' }]);
-  const updateAddonRow = (i: number, field: 'name' | 'price', val: string) => {
-    setAddons(a => a.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
-  };
+  const updateAddonRow = (i: number, field: 'name' | 'price', val: string) => setAddons(a => a.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
   const removeAddonRow = (i: number) => setAddons(a => a.filter((_, idx) => idx !== i));
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000';
   const filtered = products.filter((p: any) => p.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
@@ -144,7 +113,11 @@ export default function AdminProductsPage() {
                 <tr key={p.id} className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors ${!p.isActive ? 'opacity-50' : ''}`}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      {p.image ? <img src={p.image.startsWith('http') ? p.image : `${API_URL}${p.image}`} alt={p.name} className="w-10 h-10 rounded-xl object-cover" /> : <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-xl flex items-center justify-center text-xl">🍽️</div>}
+                      {p.image ? (
+                        <img src={p.image} alt={p.name} className="w-10 h-10 rounded-xl object-cover" onError={(e: any) => { e.target.style.display='none'; }} />
+                      ) : (
+                        <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-xl flex items-center justify-center text-xl">🍽️</div>
+                      )}
                       <div>
                         <p className="font-medium text-gray-900 dark:text-white">{p.name}</p>
                         {p.isFeatured && <span className="text-xs text-yellow-600">⭐ Featured</span>}
@@ -154,9 +127,7 @@ export default function AdminProductsPage() {
                   <td className="px-4 py-3 text-gray-500 dark:text-gray-400 text-xs">{p.category?.name}</td>
                   <td className="px-4 py-3 font-bold text-gray-900 dark:text-white">₦{p.price.toLocaleString()}</td>
                   <td className="px-4 py-3">
-                    {p.variants?.length > 0 ? (
-                      <span className="badge bg-purple-100 text-purple-700">{p.variants.length} sizes</span>
-                    ) : <span className="text-gray-400 text-xs">None</span>}
+                    {p.variants?.length > 0 ? <span className="badge bg-purple-100 text-purple-700">{p.variants.length} sizes</span> : <span className="text-gray-400 text-xs">None</span>}
                     {p.addons?.length > 0 && <span className="badge bg-indigo-100 text-indigo-700 ml-1">{p.addons.length} addons</span>}
                   </td>
                   <td className="px-4 py-3">
@@ -196,7 +167,7 @@ export default function AdminProductsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Base Price (₦) *</label>
-                  <input type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} required className="input" placeholder="2500" />
+                  <input type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} required className="input" placeholder="2500" min="0" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Category *</label>
@@ -206,12 +177,18 @@ export default function AdminProductsPage() {
                   </select>
                 </div>
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Food Image</label>
-                <input type="file" accept="image/*" onChange={handleImageUpload} className="input text-sm" />
-                {uploading && <p className="text-xs text-blue-600 mt-1">Uploading...</p>}
-                {form.image && <p className="text-xs text-green-600 mt-1">✓ Image ready</p>}
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Image URL</label>
+                <input value={form.image} onChange={e => setForm(f => ({ ...f, image: e.target.value }))} className="input" placeholder="https://example.com/image.jpg" />
+                {form.image && (
+                  <div className="mt-2">
+                    <img src={form.image} alt="Preview" className="w-20 h-20 rounded-xl object-cover border border-gray-200" onError={(e: any) => { e.target.style.display='none'; }} />
+                  </div>
+                )}
+                <p className="text-xs text-gray-400 mt-1">Paste a direct image URL (JPG, PNG, WebP)</p>
               </div>
+
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={form.hasVariants} onChange={e => setForm(f => ({ ...f, hasVariants: e.target.checked }))} className="rounded" />
@@ -223,7 +200,6 @@ export default function AdminProductsPage() {
                 </label>
               </div>
 
-              {/* Variants Manager */}
               {form.hasVariants && (
                 <div className="border-t border-gray-100 dark:border-gray-700 pt-4">
                   <div className="flex items-center justify-between mb-3">
@@ -236,16 +212,15 @@ export default function AdminProductsPage() {
                     {variants.map((v, i) => (
                       <div key={i} className="flex gap-2 items-center">
                         <input value={v.name} onChange={e => updateVariantRow(i, 'name', e.target.value)} placeholder="e.g. Small" className="input !py-1.5 text-sm flex-1" />
-                        <input type="number" value={v.price} onChange={e => updateVariantRow(i, 'price', e.target.value)} placeholder="Price" className="input !py-1.5 text-sm w-24" />
+                        <input type="number" value={v.price} onChange={e => updateVariantRow(i, 'price', e.target.value)} placeholder="Price" className="input !py-1.5 text-sm w-24" min="0" />
                         <button type="button" onClick={() => removeVariantRow(i)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"><X className="w-4 h-4" /></button>
                       </div>
                     ))}
-                    {variants.length === 0 && <p className="text-xs text-gray-400">No variants yet. Click "+ Add Size" to create one.</p>}
+                    {variants.length === 0 && <p className="text-xs text-gray-400">Click "+ Add Size" to create variants.</p>}
                   </div>
                 </div>
               )}
 
-              {/* Addons Manager */}
               <div className="border-t border-gray-100 dark:border-gray-700 pt-4">
                 <div className="flex items-center justify-between mb-3">
                   <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">Extras & Add-ons</label>
@@ -255,7 +230,7 @@ export default function AdminProductsPage() {
                   {addons.map((a, i) => (
                     <div key={i} className="flex gap-2 items-center">
                       <input value={a.name} onChange={e => updateAddonRow(i, 'name', e.target.value)} placeholder="e.g. Extra Cheese" className="input !py-1.5 text-sm flex-1" disabled={!!a.id} />
-                      <input type="number" value={a.price} onChange={e => updateAddonRow(i, 'price', e.target.value)} placeholder="Price" className="input !py-1.5 text-sm w-24" disabled={!!a.id} />
+                      <input type="number" value={a.price} onChange={e => updateAddonRow(i, 'price', e.target.value)} placeholder="Price" className="input !py-1.5 text-sm w-24" disabled={!!a.id} min="0" />
                       <button type="button" onClick={() => removeAddonRow(i)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"><X className="w-4 h-4" /></button>
                     </div>
                   ))}
