@@ -23,7 +23,7 @@ async function main() {
 
   await prisma.restaurantSettings.create({
     data: {
-      name: 'Food Palace Restaurant',
+      name: 'Food Palace Plus',
       phone: '+234 800 000 0000',
       whatsapp: '+2348000000000',
       email: 'info@foodpalace.ng',
