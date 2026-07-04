@@ -12,11 +12,14 @@ async function generateOrderNumber() {
 
 router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { items, deliveryAddress, deliveryArea, zoneId, paymentMethod, deliveryNotes } = req.body;
+    const { items, deliveryAddress, deliveryArea, zoneId, paymentMethod, deliveryNotes, fulfillmentType } = req.body;
     if (!items || items.length === 0) return res.status(400).json({ error: 'No items in order' });
-    const zone = zoneId ? await prisma.deliveryZone.findUnique({ where: { id: zoneId } }) : null;
+
+    const isPickup = fulfillmentType === 'PICKUP';
+    const zone = (!isPickup && zoneId) ? await prisma.deliveryZone.findUnique({ where: { id: zoneId } }) : null;
     const deliveryFee = zone ? zone.deliveryFee : 0;
-    const estimatedTime = zone ? zone.estimatedTime : '35-45 mins';
+    const estimatedTime = zone ? zone.estimatedTime : isPickup ? 'Ready for pickup in 20-30 mins' : '35-45 mins';
+
     let subtotal = 0;
     const orderItems = [];
     for (const item of items) {
@@ -39,8 +42,8 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const total = subtotal + deliveryFee;
     const orderNumber = await generateOrderNumber();
 
-    // Auto-cancel timer: 30 minutes for bank transfer if payment not confirmed
-    const autoCancel = paymentMethod === 'BANK_TRANSFER' ? new Date(Date.now() + 30 * 60 * 1000) : null;
+    // Only set auto-cancel timer for DELIVERY orders
+    const autoCancel = (!isPickup && paymentMethod === 'BANK_TRANSFER') ? new Date(Date.now() + 30 * 60 * 1000) : null;
 
     const order = await prisma.order.create({
       data: {
@@ -48,24 +51,26 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
         userId: req.user!.id,
         paymentMethod,
         subtotal, deliveryFee, total,
-        deliveryAddress, deliveryArea, deliveryNotes,
-        zoneId: zoneId || null, estimatedTime,
+        deliveryAddress: deliveryAddress || 'PICKUP',
+        deliveryArea, deliveryNotes,
+        zoneId: zone?.id || null, estimatedTime,
         autoCancelAt: autoCancel,
+        fulfillmentType: fulfillmentType || 'DELIVERY',
         items: { create: orderItems },
         payment: { create: { method: paymentMethod, amount: total, status: 'AWAITING_CONFIRMATION' } },
       },
       include: { items: true, payment: true, zone: true },
     });
-    await prisma.notification.create({ data: { title: 'New Order Received', message: `Order #${order.orderNumber} placed for ₦${total.toLocaleString()}`, type: 'order', orderId: order.id } });
+
+    await prisma.notification.create({ data: { title: 'New Order Received', message: `Order #${order.orderNumber} placed for ₦${total.toLocaleString()} (${isPickup ? 'Pickup' : 'Delivery'})`, type: 'order', orderId: order.id } });
     res.status(201).json(order);
   } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
 });
 
 router.get('/my', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    // Auto-cancel expired unpaid bank transfer orders
     await prisma.order.updateMany({
-      where: { autoCancelAt: { lt: new Date() }, paymentStatus: 'AWAITING_CONFIRMATION', status: { not: 'CANCELLED' } },
+      where: { autoCancelAt: { lt: new Date() }, paymentStatus: 'AWAITING_CONFIRMATION', status: { notIn: ['CANCELLED', 'DELIVERED'] } },
       data: { status: 'CANCELLED', paymentStatus: 'REJECTED' },
     });
     const orders = await prisma.order.findMany({ where: { userId: req.user!.id }, include: { items: true, payment: true, zone: true }, orderBy: { createdAt: 'desc' } });
@@ -88,9 +93,11 @@ router.patch('/:id/payment-made', authenticate, async (req: AuthRequest, res: Re
   try {
     const order = await prisma.order.findFirst({ where: { id: req.params.id, userId: req.user!.id } });
     if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.status === 'CANCELLED') return res.status(400).json({ error: 'This order has been cancelled' });
     await prisma.payment.update({ where: { orderId: order.id }, data: { status: 'AWAITING_CONFIRMATION' } });
     await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: 'AWAITING_CONFIRMATION' } });
-    res.json({ message: 'Payment confirmation sent' });
+    await prisma.notification.create({ data: { title: 'Payment Claimed', message: `Customer claimed payment for order #${order.orderNumber} — ₦${order.total.toLocaleString()}. Please verify!`, type: 'payment', orderId: order.id } });
+    res.json({ message: 'Payment confirmation sent to admin' });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
@@ -98,9 +105,8 @@ router.patch('/:id/cancel', authenticate, async (req: AuthRequest, res: Response
   try {
     const order = await prisma.order.findFirst({ where: { id: req.params.id, userId: req.user!.id } });
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (order.status === 'DELIVERED' || order.status === 'OUT_FOR_DELIVERY') {
-      return res.status(400).json({ error: 'This order can no longer be cancelled' });
-    }
+    if (['DELIVERED', 'OUT_FOR_DELIVERY'].includes(order.status)) return res.status(400).json({ error: 'This order can no longer be cancelled' });
+    if (order.paymentStatus === 'CONFIRMED') return res.status(400).json({ error: 'Cannot cancel a confirmed payment order' });
     await prisma.order.update({ where: { id: order.id }, data: { status: 'CANCELLED' } });
     res.json({ message: 'Order cancelled' });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -109,7 +115,7 @@ router.patch('/:id/cancel', authenticate, async (req: AuthRequest, res: Response
 router.get('/', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     await prisma.order.updateMany({
-      where: { autoCancelAt: { lt: new Date() }, paymentStatus: 'AWAITING_CONFIRMATION', status: { not: 'CANCELLED' } },
+      where: { autoCancelAt: { lt: new Date() }, paymentStatus: 'AWAITING_CONFIRMATION', status: { notIn: ['CANCELLED', 'DELIVERED'] } },
       data: { status: 'CANCELLED', paymentStatus: 'REJECTED' },
     });
     const { status, paymentStatus, page = '1', limit = '20' } = req.query;
@@ -138,8 +144,12 @@ router.patch('/:id/payment', authenticate, requireAdmin, async (req: AuthRequest
     const order = await prisma.order.findUnique({ where: { id: req.params.id } });
     if (!order) return res.status(404).json({ error: 'Order not found' });
     await prisma.payment.update({ where: { orderId: order.id }, data: { status: status as PaymentStatus, confirmedBy: req.user!.id, confirmedAt: status === 'CONFIRMED' ? new Date() : null, notes } });
-    await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: status as PaymentStatus, autoCancelAt: null, ...(status === 'CONFIRMED' ? { status: 'PREPARING' } : {}) } });
-    await prisma.notification.create({ data: { userId: order.userId, orderId: order.id, title: status === 'CONFIRMED' ? 'Payment Confirmed' : 'Payment Rejected', message: status === 'CONFIRMED' ? `Payment for order #${order.orderNumber} confirmed!` : `Payment for order #${order.orderNumber} was rejected. ${notes || ''}`, type: 'payment' } });
+    await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: status as PaymentStatus, autoCancelAt: null, ...(status === 'CONFIRMED' ? { status: 'PREPARING' } : status === 'REJECTED' ? { status: 'CANCELLED' } : {}) } });
+
+    // Mark related notifications as read when admin attends to payment
+    await prisma.notification.updateMany({ where: { orderId: order.id, userId: null }, data: { isRead: true } });
+
+    await prisma.notification.create({ data: { userId: order.userId, orderId: order.id, title: status === 'CONFIRMED' ? '✅ Payment Confirmed!' : '❌ Payment Rejected', message: status === 'CONFIRMED' ? `Payment for order #${order.orderNumber} confirmed! We are now preparing your order.` : `Payment for order #${order.orderNumber} was rejected. ${notes || 'Please contact us via WhatsApp.'}`, type: 'payment' } });
     res.json({ message: `Payment ${status.toLowerCase()}` });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });

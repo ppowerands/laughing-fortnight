@@ -49,10 +49,16 @@ router.patch('/users/:id/toggle', authenticate, requireAdmin, async (req: AuthRe
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+// Only show unread notifications
 router.get('/notifications', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const notifications = await prisma.notification.findMany({ where: { userId: null }, orderBy: { createdAt: 'desc' }, take: 50, include: { order: { select: { orderNumber: true, total: true } } } });
-    const unreadCount = await prisma.notification.count({ where: { userId: null, isRead: false } });
+    const notifications = await prisma.notification.findMany({
+      where: { userId: null, isRead: false },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: { order: { select: { orderNumber: true, total: true } } }
+    });
+    const unreadCount = notifications.length;
     res.json({ notifications, unreadCount });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
@@ -71,18 +77,15 @@ router.patch('/notifications/read-all', authenticate, requireAdmin, async (req: 
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// Update own admin account (email/password)
 router.put('/account', authenticate, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const { email, currentPassword, newPassword } = req.body;
     const admin = await prisma.user.findUnique({ where: { id: req.user!.id } });
     if (!admin) return res.status(404).json({ error: 'Account not found' });
-
     if (currentPassword) {
       const valid = await bcrypt.compare(currentPassword, admin.password);
       if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
     }
-
     const updateData: any = {};
     if (email && email !== admin.email) {
       const existing = await prisma.user.findUnique({ where: { email } });
@@ -90,15 +93,10 @@ router.put('/account', authenticate, requireSuperAdmin, async (req: AuthRequest,
       updateData.email = email;
     }
     if (newPassword) {
-      if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+      if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
       updateData.password = await bcrypt.hash(newPassword, 12);
     }
-
-    const updated = await prisma.user.update({
-      where: { id: req.user!.id },
-      data: updateData,
-      select: { id: true, name: true, email: true, role: true },
-    });
+    const updated = await prisma.user.update({ where: { id: req.user!.id }, data: updateData, select: { id: true, name: true, email: true, role: true } });
     res.json(updated);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });

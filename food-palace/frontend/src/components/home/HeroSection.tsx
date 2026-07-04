@@ -11,9 +11,13 @@ export default function HeroSection() {
     staleTime: 0,
   });
 
+  const heroStyle = content?.hero_image
+    ? { backgroundImage: `linear-gradient(to bottom right, rgba(30,27,75,0.92), rgba(30,58,138,0.88)), url(${content.hero_image})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+    : {};
+
   return (
-    <section className="relative min-h-screen flex items-center overflow-hidden bg-gradient-to-br from-blue-950 via-blue-900 to-slate-900">
-      <div className="absolute inset-0 opacity-10">
+    <section className="relative min-h-screen flex items-center overflow-hidden bg-gradient-to-br from-blue-950 via-blue-900 to-slate-900" style={heroStyle}>
+      <div className="absolute inset-0 opacity-10 pointer-events-none">
         <div className="absolute top-0 left-0 w-96 h-96 bg-blue-400 rounded-full filter blur-3xl transform -translate-x-1/2 -translate-y-1/2" />
         <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-300 rounded-full filter blur-3xl transform translate-x-1/2 translate-y-1/2" />
       </div>
@@ -28,7 +32,9 @@ export default function HeroSection() {
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white leading-tight mb-6">
               {content?.hero_heading_1 || 'Authentic'}{' '}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-300 to-sky-300">{content?.hero_heading_2 || 'Nigerian'}</span>{' '}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-300 to-sky-300">
+                {content?.hero_heading_2 || 'Nigerian'}
+              </span>{' '}
               {content?.hero_heading_3 || 'Cuisine'}
             </h1>
 

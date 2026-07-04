@@ -2,7 +2,7 @@
 import { useEffect, useState, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, Clock, Truck, Package, XCircle, MessageCircle, Copy } from 'lucide-react';
+import { CheckCircle, Clock, Truck, Package, XCircle, MessageCircle, Copy, Store } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import { ordersApi } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
@@ -20,47 +20,62 @@ const statusConfig: Record<string, { label: string; color: string; icon: any; bg
 const paymentStatusConfig: Record<string, { label: string; color: string }> = {
   PENDING: { label: 'Pending', color: 'text-yellow-600' },
   AWAITING_CONFIRMATION: { label: 'Awaiting Confirmation', color: 'text-blue-600' },
-  CONFIRMED: { label: 'Confirmed', color: 'text-green-600' },
+  CONFIRMED: { label: 'Confirmed ✓', color: 'text-green-600' },
   REJECTED: { label: 'Rejected', color: 'text-red-600' },
 };
 
-function CountdownTimer({ autoCancelAt }: { autoCancelAt: string }) {
+function CountdownTimer({ autoCancelAt, onExpired }: { autoCancelAt: string; onExpired: () => void }) {
   const [timeLeft, setTimeLeft] = useState('');
   const [expired, setExpired] = useState(false);
+  const [percentage, setPercentage] = useState(100);
 
   useEffect(() => {
+    const cancelTime = new Date(autoCancelAt).getTime();
+    const totalTime = 30 * 60 * 1000;
+
     const interval = setInterval(() => {
       const now = new Date().getTime();
-      const cancelTime = new Date(autoCancelAt).getTime();
       const diff = cancelTime - now;
 
       if (diff <= 0) {
         setExpired(true);
         setTimeLeft('00:00');
+        setPercentage(0);
         clearInterval(interval);
+        onExpired();
         return;
       }
 
       const minutes = Math.floor(diff / 60000);
       const seconds = Math.floor((diff % 60000) / 1000);
       setTimeLeft(`${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
+      setPercentage(Math.max(0, (diff / totalTime) * 100));
     }, 1000);
 
     return () => clearInterval(interval);
   }, [autoCancelAt]);
 
+  const color = percentage > 50 ? 'bg-green-500' : percentage > 20 ? 'bg-yellow-500' : 'bg-red-500';
+
+  if (expired) return (
+    <div className="mt-3 p-3 rounded-xl border border-red-300 bg-red-50 dark:bg-red-900/20">
+      <p className="text-sm font-bold text-red-600 text-center">⏰ Payment time expired — order will be cancelled</p>
+    </div>
+  );
+
   return (
-    <div className={`mt-3 p-3 rounded-xl border ${expired ? 'border-red-300 bg-red-50 dark:bg-red-900/20' : 'border-orange-300 bg-orange-50 dark:bg-orange-900/20'}`}>
-      <div className="flex items-center gap-2">
-        <Clock className={`w-4 h-4 ${expired ? 'text-red-600' : 'text-orange-600'}`} />
-        {expired ? (
-          <p className="text-sm font-semibold text-red-600">Payment time expired — order may be cancelled</p>
-        ) : (
-          <p className="text-sm font-semibold text-orange-700 dark:text-orange-400">
-            Transfer within: <span className="text-lg font-black">{timeLeft}</span> or order will be cancelled
-          </p>
-        )}
+    <div className="mt-3 p-4 rounded-xl border border-orange-300 bg-orange-50 dark:bg-orange-900/20">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4 text-orange-600 animate-pulse" />
+          <span className="text-sm font-semibold text-orange-700 dark:text-orange-400">Time remaining to pay:</span>
+        </div>
+        <span className="text-2xl font-black text-orange-700 dark:text-orange-400 font-mono">{timeLeft}</span>
       </div>
+      <div className="w-full bg-orange-200 dark:bg-orange-900 rounded-full h-2">
+        <div className={`h-2 rounded-full transition-all duration-1000 ${color}`} style={{ width: `${percentage}%` }} />
+      </div>
+      <p className="text-xs text-orange-600 dark:text-orange-400 mt-2 text-center">Order will be automatically cancelled if payment is not completed</p>
     </div>
   );
 }
@@ -69,23 +84,27 @@ function OrderContent() {
   const { id } = useParams();
   const searchParams = useSearchParams();
   const isBankTransfer = searchParams.get('payment') === 'bank-transfer';
-  const isSuccess = searchParams.get('success') === 'true';
+  const fulfillmentType = searchParams.get('type') || 'DELIVERY';
   const { isAuthenticated } = useAuthStore();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [timerExpired, setTimerExpired] = useState(false);
 
   useEffect(() => { if (!isAuthenticated) router.push('/login'); }, [isAuthenticated]);
 
-  const { data: order, isLoading } = useQuery({
+  const { data: order, isLoading, refetch } = useQuery({
     queryKey: ['order', id],
     queryFn: () => ordersApi.getOne(id as string).then(r => r.data),
-    refetchInterval: 15000,
+    refetchInterval: 10000,
   });
 
   const markPaidMutation = useMutation({
     mutationFn: () => ordersApi.markPaymentMade(id as string),
-    onSuccess: () => { toast.success('Payment confirmation sent!'); queryClient.invalidateQueries({ queryKey: ['order', id] }); },
-    onError: () => toast.error('Failed to confirm payment'),
+    onSuccess: () => {
+      toast.success('✅ Payment confirmation sent! Admin will verify shortly.');
+      queryClient.invalidateQueries({ queryKey: ['order', id] });
+    },
+    onError: () => toast.error('Failed to send confirmation'),
   });
 
   const cancelMutation = useMutation({
@@ -93,6 +112,11 @@ function OrderContent() {
     onSuccess: () => { toast.success('Order cancelled'); queryClient.invalidateQueries({ queryKey: ['order', id] }); },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Cannot cancel this order'),
   });
+
+  const handleTimerExpired = () => {
+    setTimerExpired(true);
+    setTimeout(() => refetch(), 3000);
+  };
 
   if (isLoading) return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
@@ -109,23 +133,28 @@ function OrderContent() {
   const status = statusConfig[order.status] || statusConfig.PENDING;
   const StatusIcon = status.icon;
   const paymentStatus = paymentStatusConfig[order.paymentStatus] || paymentStatusConfig.PENDING;
-  const whatsappText = encodeURIComponent(`Hi Food Palace! Order #${order.orderNumber} for ₦${order.total.toLocaleString()}. Items: ${order.items.map((i: any) => `${i.name} x${i.quantity}`).join(', ')}. Delivery: ${order.deliveryAddress}`);
-  const whatsappLink = `https://wa.me/${(process.env.NEXT_PUBLIC_WHATSAPP || '+2348000000000').replace(/[^0-9]/g, '')}?text=${whatsappText}`;
+  const isPickup = order.fulfillmentType === 'PICKUP' || order.deliveryAddress?.includes('PICKUP');
+  const canCancel = !['DELIVERED', 'OUT_FOR_DELIVERY', 'CANCELLED'].includes(order.status) && order.paymentStatus !== 'CONFIRMED';
+  const showTimer = order.paymentMethod === 'BANK_TRANSFER' && order.autoCancelAt && order.paymentStatus === 'AWAITING_CONFIRMATION' && order.status !== 'CANCELLED' && !isPickup;
 
-  const canCancel = !['DELIVERED', 'OUT_FOR_DELIVERY', 'CANCELLED'].includes(order.status);
+  const whatsappText = encodeURIComponent(`Hi Food Palace! Order #${order.orderNumber} for ₦${order.total.toLocaleString()}. Items: ${order.items.map((i: any) => `${i.name} x${i.quantity}`).join(', ')}.`);
+  const whatsappLink = `https://wa.me/${(process.env.NEXT_PUBLIC_WHATSAPP || '+2348000000000').replace(/[^0-9]/g, '')}?text=${whatsappText}`;
 
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-gray-950">
       <Navbar />
       <div className="max-w-2xl mx-auto px-4 pt-24 pb-16">
-        {(isSuccess || isBankTransfer) && (
+        {isBankTransfer && order.status !== 'CANCELLED' && (
           <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-2xl text-center">
             <CheckCircle className="w-10 h-10 text-green-600 mx-auto mb-2" />
             <h2 className="font-bold text-green-800 dark:text-green-300 text-lg">Order Placed Successfully!</h2>
-            {isBankTransfer && <p className="text-green-700 dark:text-green-400 text-sm mt-1">Please complete your bank transfer within 30 minutes to avoid cancellation</p>}
+            <p className="text-green-700 dark:text-green-400 text-sm mt-1">
+              {isPickup ? 'Transfer payment then come pick up your order' : 'You have 30 minutes to complete your bank transfer'}
+            </p>
           </div>
         )}
 
+        {/* Order Header */}
         <div className="card p-6 mb-4">
           <div className="flex items-start justify-between flex-wrap gap-3">
             <div>
@@ -139,13 +168,19 @@ function OrderContent() {
               </div>
               <p className="text-xs text-gray-400 mt-1">{new Date(order.createdAt).toLocaleString('en-NG')}</p>
             </div>
-            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${status.bg}`}>
-              <StatusIcon className={`w-4 h-4 ${status.color}`} />
-              <span className={`text-sm font-semibold ${status.color}`}>{status.label}</span>
+            <div className="flex flex-col gap-2 items-end">
+              <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${status.bg}`}>
+                <StatusIcon className={`w-4 h-4 ${status.color}`} />
+                <span className={`text-sm font-semibold ${status.color}`}>{status.label}</span>
+              </div>
+              <span className={`badge ${isPickup ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                {isPickup ? '🏪 Pickup' : '🚚 Delivery'}
+              </span>
             </div>
           </div>
         </div>
 
+        {/* Items */}
         <div className="card p-6 mb-4">
           <h3 className="font-bold text-gray-900 dark:text-white mb-3">Items Ordered</h3>
           <div className="space-y-3">
@@ -161,62 +196,101 @@ function OrderContent() {
             ))}
           </div>
           <div className="border-t border-gray-100 dark:border-gray-700 mt-4 pt-4 space-y-1">
-            <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400"><span>Subtotal</span><span>₦{order.subtotal.toLocaleString()}</span></div>
-            <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400"><span>Delivery Fee</span><span>₦{order.deliveryFee.toLocaleString()}</span></div>
+            <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+              <span>Subtotal</span><span>₦{order.subtotal.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+              <span>Delivery Fee</span>
+              <span>{isPickup ? <span className="text-green-600 font-medium">FREE</span> : `₦${order.deliveryFee.toLocaleString()}`}</span>
+            </div>
             <div className="flex justify-between font-black text-blue-700 dark:text-blue-400 text-lg border-t border-gray-100 dark:border-gray-700 pt-2 mt-2">
               <span>Total</span><span>₦{order.total.toLocaleString()}</span>
             </div>
           </div>
         </div>
 
+        {/* Delivery/Pickup Info */}
+        <div className="card p-6 mb-4">
+          <h3 className="font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+            {isPickup ? <><Store className="w-4 h-4" /> Pickup Details</> : <><Truck className="w-4 h-4" /> Delivery Details</>}
+          </h3>
+          {isPickup ? (
+            <p className="text-sm text-gray-600 dark:text-gray-400">Come pick up your order from our restaurant when it's ready. We'll notify you!</p>
+          ) : (
+            <>
+              <p className="text-sm text-gray-700 dark:text-gray-300">{order.deliveryAddress}</p>
+              {order.deliveryArea && <p className="text-sm text-gray-500 dark:text-gray-400">{order.deliveryArea}</p>}
+              {order.deliveryNotes && <p className="mt-2 text-sm text-gray-500 dark:text-gray-400 italic">Note: {order.deliveryNotes}</p>}
+            </>
+          )}
+        </div>
+
+        {/* Payment Section */}
         <div className="card p-6 mb-4">
           <h3 className="font-bold text-gray-900 dark:text-white mb-3">Payment</h3>
           <div className="flex justify-between text-sm mb-2">
             <span className="text-gray-500">Method</span>
             <span className="font-medium">Bank Transfer</span>
           </div>
-          <div className="flex justify-between text-sm">
+          <div className="flex justify-between text-sm mb-4">
             <span className="text-gray-500">Status</span>
             <span className={`font-semibold ${paymentStatus.color}`}>{paymentStatus.label}</span>
           </div>
 
-          {order.paymentMethod === 'BANK_TRANSFER' && order.paymentStatus !== 'CONFIRMED' && order.status !== 'CANCELLED' && (
-            <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
-              <p className="font-bold text-gray-900 dark:text-white">MONIEPOINT MFB</p>
-              <p className="text-sm text-gray-700 dark:text-gray-300">USMAN SAMBO MARAFA</p>
-              <p className="text-xl font-black text-blue-700 dark:text-blue-400 tracking-widest">9110064364</p>
-              <p className="text-sm text-blue-700 dark:text-blue-400 font-bold mt-1">Amount: ₦{order.total.toLocaleString()}</p>
+          {/* Bank Transfer Steps */}
+          {order.paymentStatus !== 'CONFIRMED' && order.status !== 'CANCELLED' && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-4">
+              <p className="text-xs font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wide mb-3">Transfer Details</p>
+              <div className="space-y-2 mb-3">
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Bank:</span><span className="font-bold">MONIEPOINT MFB</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Name:</span><span className="font-bold">USMAN SAMBO MARAFA</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Account:</span><span className="font-black text-blue-700 text-lg tracking-widest">9110064364</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Amount:</span><span className="font-black text-blue-700">₦{order.total.toLocaleString()}</span></div>
+              </div>
 
-              {order.autoCancelAt && order.paymentStatus === 'AWAITING_CONFIRMATION' && (
-                <CountdownTimer autoCancelAt={order.autoCancelAt} />
+              {/* Countdown Timer - only for DELIVERY */}
+              {showTimer && (
+                <CountdownTimer autoCancelAt={order.autoCancelAt} onExpired={handleTimerExpired} />
               )}
 
+              {/* I've Paid Button */}
               {order.paymentStatus === 'AWAITING_CONFIRMATION' && order.status !== 'CANCELLED' && (
-                <div className="mt-3 space-y-2">
+                <div className="mt-3">
                   <button onClick={() => markPaidMutation.mutate()} disabled={markPaidMutation.isPending}
-                    className="w-full btn-primary flex items-center justify-center gap-2 !py-2.5 text-sm">
-                    {markPaidMutation.isPending ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                    I Have Made Payment
+                    className="w-full btn-primary flex items-center justify-center gap-2 !py-3">
+                    {markPaidMutation.isPending
+                      ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      : <CheckCircle className="w-5 h-5" />}
+                    I Have Made the Transfer
                   </button>
+                  <p className="text-xs text-center text-gray-400 mt-2">Tap after completing your bank transfer</p>
                 </div>
               )}
 
-              {order.paymentStatus === 'AWAITING_CONFIRMATION' && (
-                <div className="mt-2 text-center text-sm text-blue-700 dark:text-blue-400 font-medium">
-                  ✓ Payment confirmation sent — awaiting admin review
+              {order.paymentStatus === 'CONFIRMED' && (
+                <div className="mt-3 text-center">
+                  <p className="text-green-600 font-bold">✅ Payment confirmed by admin!</p>
+                  <p className="text-sm text-gray-500 mt-1">Your order is now being prepared</p>
+                </div>
+              )}
+
+              {order.paymentStatus === 'REJECTED' && (
+                <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-xl">
+                  <p className="text-red-600 font-bold text-sm text-center">❌ Payment was rejected</p>
+                  <p className="text-xs text-red-500 text-center mt-1">Please contact us via WhatsApp for assistance</p>
                 </div>
               )}
             </div>
           )}
+
+          {order.paymentStatus === 'CONFIRMED' && (
+            <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200">
+              <p className="text-green-600 font-bold text-sm text-center">✅ Payment confirmed — Order is being prepared!</p>
+            </div>
+          )}
         </div>
 
-        <div className="card p-6 mb-4">
-          <h3 className="font-bold text-gray-900 dark:text-white mb-3">Delivery</h3>
-          <p className="text-sm text-gray-700 dark:text-gray-300">{order.deliveryAddress}</p>
-          {order.deliveryArea && <p className="text-sm text-gray-500 dark:text-gray-400">{order.deliveryArea}</p>}
-          {order.deliveryNotes && <p className="mt-2 text-sm text-gray-500 dark:text-gray-400 italic">Note: {order.deliveryNotes}</p>}
-        </div>
-
+        {/* Actions */}
         <div className="flex gap-3">
           <a href={whatsappLink} target="_blank" rel="noopener noreferrer"
             className="flex-1 flex items-center justify-center gap-2 py-3 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-xl transition-colors text-sm">
@@ -225,7 +299,7 @@ function OrderContent() {
           {canCancel && (
             <button onClick={() => { if (confirm('Cancel this order?')) cancelMutation.mutate(); }}
               disabled={cancelMutation.isPending}
-              className="flex-1 py-3 rounded-xl border-2 border-red-500 text-red-500 font-semibold text-sm hover:bg-red-50 transition-colors">
+              className="flex-1 py-3 rounded-xl border-2 border-red-400 text-red-500 font-semibold text-sm hover:bg-red-50 transition-colors">
               Cancel Order
             </button>
           )}
