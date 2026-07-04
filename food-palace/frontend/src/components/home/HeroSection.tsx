@@ -59,11 +59,11 @@ export default function HeroSection() {
               </div>
 
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white leading-tight mb-6">
-                {content?.hero_heading_1 || 'Authentic'}{' '}
+                {content?.hero_heading_1 || 'FOOD'}{' '}
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-300 to-sky-300">
-                  {content?.hero_heading_2 || 'Nigerian'}
+                  {content?.hero_heading_2 || 'PALACE'}
                 </span>{' '}
-                {content?.hero_heading_3 || 'Cuisine'}
+                {content?.hero_heading_3 || 'PLUS'}
               </h1>
 
               <p className="text-blue-200 text-lg mb-8 max-w-lg mx-auto lg:mx-0 leading-relaxed">
