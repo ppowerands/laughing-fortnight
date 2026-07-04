@@ -5,7 +5,7 @@ import { categoriesApi } from '@/lib/api';
 
 const categoryEmojis: Record<string, string> = {
   'main-meals': '🍛', 'burgers-shawarma': '🌯', 'soups-swallow': '🍲',
-  'sides': '🍟', 'drinks': '🥤', 'desserts': '🍦',
+  'sides': '🍟', 'drinks': '🥤', 'desserts': '🍦', 'cake': '🍰', 'snack & pastries': '🥐', 'hot tea': '🫖',
 };
 
 export default function CategorySection() {
