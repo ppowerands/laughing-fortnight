@@ -2,14 +2,15 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, ShoppingBag, UtensilsCrossed, Tags, Truck, Settings, Users, LogOut, Menu, X, Bell, ChefHat, BarChart3, FileText, UserCircle } from 'lucide-react';
+import { LayoutDashboard, ShoppingBag, UtensilsCrossed, Tags, Truck, Settings, Users, LogOut, Menu, X, Bell, ChefHat, BarChart3, FileText, UserCircle, CreditCard } from 'lucide-react';
 import { useAuthStore } from '@/lib/auth-store';
-import { adminApi } from '@/lib/api';
+import { adminApi, ordersApi } from '@/lib/api';
 import { useQuery } from '@tanstack/react-query';
 
 const navItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/admin/orders', label: 'Orders', icon: ShoppingBag },
+  { href: '/admin/payments', label: 'Payments', icon: CreditCard },
   { href: '/admin/products', label: 'Products', icon: UtensilsCrossed },
   { href: '/admin/categories', label: 'Categories', icon: Tags },
   { href: '/admin/delivery', label: 'Delivery Zones', icon: Truck },
@@ -37,7 +38,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     enabled: isAuthenticated && user?.role !== 'CUSTOMER',
   });
 
+  const { data: pendingPaymentsData } = useQuery({
+    queryKey: ['pending-payments-count'],
+    queryFn: () => ordersApi.getAll({ paymentStatus: 'AWAITING_CONFIRMATION', limit: 1 }).then(r => r.data),
+    refetchInterval: 15000,
+    enabled: isAuthenticated && user?.role !== 'CUSTOMER',
+  });
+
   const unreadCount = notifData?.unreadCount || 0;
+  const pendingPayments = pendingPaymentsData?.total || 0;
   const isActive = (href: string, exact?: boolean) => exact ? pathname === href : pathname.startsWith(href);
 
   if (!isAuthenticated || user?.role === 'CUSTOMER') return null;
@@ -75,9 +84,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
           {navItems.map(({ href, label, icon: Icon, exact }) => (
             <Link key={href} href={href} onClick={() => setSidebarOpen(false)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive(href, exact) ? 'bg-blue-700 text-white shadow-md' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
-              <Icon className="w-5 h-5 shrink-0" />
-              {label}
+              className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive(href, exact) ? 'bg-blue-700 text-white shadow-md' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+              <div className="flex items-center gap-3">
+                <Icon className="w-5 h-5 shrink-0" />
+                {label}
+              </div>
+              {href === '/admin/payments' && pendingPayments > 0 && (
+                <span className="bg-yellow-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">{pendingPayments > 9 ? '9+' : pendingPayments}</span>
+              )}
             </Link>
           ))}
         </nav>
@@ -105,6 +119,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </h1>
           </div>
           <div className="flex items-center gap-2 ml-auto">
+            {pendingPayments > 0 && (
+              <Link href="/admin/payments" className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-yellow-100 text-yellow-700 text-xs font-semibold hover:bg-yellow-200 transition-colors animate-pulse">
+                <CreditCard className="w-4 h-4" /> {pendingPayments} pending
+              </Link>
+            )}
             <Link href="/admin/orders" className="relative p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
               <Bell className="w-5 h-5 text-gray-600 dark:text-gray-300" />
               {unreadCount > 0 && (
