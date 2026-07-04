@@ -50,14 +50,25 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
         orderNumber,
         userId: req.user!.id,
         paymentMethod,
-        subtotal, deliveryFee, total,
+        paymentStatus: 'PENDING',
+        subtotal,
+        deliveryFee,
+        total,
         deliveryAddress: deliveryAddress || 'PICKUP',
-        deliveryArea, deliveryNotes,
-        zoneId: zone?.id || null, estimatedTime,
+        deliveryArea,
+        deliveryNotes,
+        zoneId: zone?.id || null,
+        estimatedTime,
         autoCancelAt: autoCancel,
         fulfillmentType: fulfillmentType || 'DELIVERY',
         items: { create: orderItems },
-        payment: { create: { method: paymentMethod, amount: total, status: 'AWAITING_CONFIRMATION' } },
+        payment: {
+          create: {
+            method: paymentMethod,
+            amount: total,
+            status: 'PENDING'
+          }
+        },
       },
       include: { items: true, payment: true, zone: true },
     });

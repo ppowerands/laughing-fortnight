@@ -18,8 +18,8 @@ const statusConfig: Record<string, { label: string; color: string; icon: any; bg
 };
 
 const paymentStatusConfig: Record<string, { label: string; color: string }> = {
-  PENDING: { label: 'Pending', color: 'text-yellow-600' },
-  AWAITING_CONFIRMATION: { label: 'Awaiting Confirmation', color: 'text-blue-600' },
+  PENDING: { label: 'Awaiting Payment', color: 'text-yellow-600' },
+  AWAITING_CONFIRMATION: { label: 'Awaiting Admin Verification', color: 'text-blue-600' },
   CONFIRMED: { label: 'Confirmed ✓', color: 'text-green-600' },
   REJECTED: { label: 'Rejected', color: 'text-red-600' },
 };
@@ -53,13 +53,13 @@ function CountdownTimer({ autoCancelAt, onExpired }: { autoCancelAt: string; onE
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [autoCancelAt]);
+  }, [autoCancelAt, onExpired]);
 
   const color = percentage > 50 ? 'bg-green-500' : percentage > 20 ? 'bg-yellow-500' : 'bg-red-500';
 
   if (expired) return (
     <div className="mt-3 p-3 rounded-xl border border-red-300 bg-red-50 dark:bg-red-900/20">
-      <p className="text-sm font-bold text-red-600 text-center">⏰ Payment time expired — order will be cancelled</p>
+      <p className="text-sm font-bold text-red-600 text-center">⏰ Payment time expired — order has been cancelled</p>
     </div>
   );
 
@@ -90,7 +90,7 @@ function OrderContent() {
   const queryClient = useQueryClient();
   const [timerExpired, setTimerExpired] = useState(false);
 
-  useEffect(() => { if (!isAuthenticated) router.push('/login'); }, [isAuthenticated]);
+  useEffect(() => { if (!isAuthenticated) router.push('/login'); }, [isAuthenticated, router]);
 
   const { data: order, isLoading, refetch } = useQuery({
     queryKey: ['order', id],
@@ -103,18 +103,26 @@ function OrderContent() {
     onSuccess: () => {
       toast.success('✅ Payment confirmation sent! Admin will verify shortly.');
       queryClient.invalidateQueries({ queryKey: ['order', id] });
+      refetch();
     },
-    onError: () => toast.error('Failed to send confirmation'),
+    onError: (err: any) => {
+      toast.error(err.response?.data?.error || 'Failed to send confirmation');
+    },
   });
 
   const cancelMutation = useMutation({
     mutationFn: () => ordersApi.cancel(id as string),
-    onSuccess: () => { toast.success('Order cancelled'); queryClient.invalidateQueries({ queryKey: ['order', id] }); },
+    onSuccess: () => { 
+      toast.success('Order cancelled'); 
+      queryClient.invalidateQueries({ queryKey: ['order', id] });
+      refetch();
+    },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Cannot cancel this order'),
   });
 
   const handleTimerExpired = () => {
     setTimerExpired(true);
+    toast.error('⏰ Payment time has expired! Order cancelled.');
     setTimeout(() => refetch(), 3000);
   };
 
@@ -135,7 +143,21 @@ function OrderContent() {
   const paymentStatus = paymentStatusConfig[order.paymentStatus] || paymentStatusConfig.PENDING;
   const isPickup = order.fulfillmentType === 'PICKUP' || order.deliveryAddress?.includes('PICKUP');
   const canCancel = !['DELIVERED', 'OUT_FOR_DELIVERY', 'CANCELLED'].includes(order.status) && order.paymentStatus !== 'CONFIRMED';
-  const showTimer = order.paymentMethod === 'BANK_TRANSFER' && order.autoCancelAt && order.paymentStatus === 'AWAITING_CONFIRMATION' && order.status !== 'CANCELLED' && !isPickup;
+  
+  // Show timer only for DELIVERY orders with PENDING payment and autoCancelAt set
+  const showTimer = order.paymentMethod === 'BANK_TRANSFER' && 
+    order.autoCancelAt && 
+    order.paymentStatus === 'PENDING' && 
+    order.status !== 'CANCELLED' && 
+    !isPickup;
+
+  // Show "I've Made This Payment" button only when:
+  // 1. Payment is PENDING (customer hasn't marked it yet)
+  // 2. Order is not cancelled
+  // 3. Payment method is BANK_TRANSFER
+  const showPayButton = order.paymentMethod === 'BANK_TRANSFER' && 
+    order.paymentStatus === 'PENDING' && 
+    order.status !== 'CANCELLED';
 
   const whatsappText = encodeURIComponent(`Hi Food Palace! Order #${order.orderNumber} for ₦${order.total.toLocaleString()}. Items: ${order.items.map((i: any) => `${i.name} x${i.quantity}`).join(', ')}.`);
   const whatsappLink = `https://wa.me/${(process.env.NEXT_PUBLIC_WHATSAPP || '+2348000000000').replace(/[^0-9]/g, '')}?text=${whatsappText}`;
@@ -161,8 +183,10 @@ function OrderContent() {
               <p className="text-sm text-gray-500 dark:text-gray-400">Order Number</p>
               <div className="flex items-center gap-2 mt-0.5">
                 <h1 className="text-xl font-black text-gray-900 dark:text-white">#{order.orderNumber}</h1>
-                <button onClick={() => { navigator.clipboard.writeText(order.orderNumber); toast.success('Copied!'); }}
-                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                <button 
+                  onClick={() => { navigator.clipboard.writeText(order.orderNumber); toast.success('Copied!'); }}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                >
                   <Copy className="w-4 h-4 text-gray-400" />
                 </button>
               </div>
@@ -237,69 +261,126 @@ function OrderContent() {
             <span className={`font-semibold ${paymentStatus.color}`}>{paymentStatus.label}</span>
           </div>
 
-          {/* Bank Transfer Steps */}
-          {order.paymentStatus !== 'CONFIRMED' && order.status !== 'CANCELLED' && (
+          {/* Bank Transfer Details - Show for all BANK_TRANSFER orders except CONFIRMED */}
+          {order.paymentMethod === 'BANK_TRANSFER' && order.paymentStatus !== 'CONFIRMED' && order.status !== 'CANCELLED' && (
             <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-4">
               <p className="text-xs font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wide mb-3">Transfer Details</p>
               <div className="space-y-2 mb-3">
-                <div className="flex justify-between text-sm"><span className="text-gray-500">Bank:</span><span className="font-bold">MONIEPOINT MFB</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-500">Name:</span><span className="font-bold">USMAN SAMBO MARAFA</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-500">Account:</span><span className="font-black text-blue-700 text-lg tracking-widest">9110064364</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-500">Amount:</span><span className="font-black text-blue-700">₦{order.total.toLocaleString()}</span></div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Bank:</span>
+                  <span className="font-bold">MONIEPOINT MFB</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Name:</span>
+                  <span className="font-bold">USMAN SAMBO MARAFA</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Account:</span>
+                  <span className="font-black text-blue-700 text-lg tracking-widest">9110064364</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Amount:</span>
+                  <span className="font-black text-blue-700">₦{order.total.toLocaleString()}</span>
+                </div>
               </div>
 
-              {/* Countdown Timer - only for DELIVERY */}
+              {/* Countdown Timer - only for DELIVERY orders with PENDING payment */}
               {showTimer && (
                 <CountdownTimer autoCancelAt={order.autoCancelAt} onExpired={handleTimerExpired} />
               )}
 
-              {/* I've Paid Button */}
-              {order.paymentStatus === 'AWAITING_CONFIRMATION' && order.status !== 'CANCELLED' && (
-                <div className="mt-3">
-                  <button onClick={() => markPaidMutation.mutate()} disabled={markPaidMutation.isPending}
-                    className="w-full btn-primary flex items-center justify-center gap-2 !py-3">
-                    {markPaidMutation.isPending
-                      ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      : <CheckCircle className="w-5 h-5" />}
-                    I Have Made the Transfer
-                  </button>
-                  <p className="text-xs text-center text-gray-400 mt-2">Tap after completing your bank transfer</p>
+              {/* Status Messages */}
+              {order.paymentStatus === 'PENDING' && (
+                <div className="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-200">
+                  <p className="text-sm text-yellow-700 dark:text-yellow-400 text-center">
+                    ⏳ Please complete your transfer and tap the button below
+                  </p>
                 </div>
               )}
 
-              {order.paymentStatus === 'CONFIRMED' && (
-                <div className="mt-3 text-center">
-                  <p className="text-green-600 font-bold">✅ Payment confirmed by admin!</p>
-                  <p className="text-sm text-gray-500 mt-1">Your order is now being prepared</p>
+              {order.paymentStatus === 'AWAITING_CONFIRMATION' && (
+                <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200">
+                  <p className="text-sm text-blue-700 dark:text-blue-400 text-center font-semibold animate-pulse">
+                    ⏳ Waiting for admin to verify your payment...
+                  </p>
                 </div>
               )}
 
               {order.paymentStatus === 'REJECTED' && (
-                <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-xl">
+                <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200">
                   <p className="text-red-600 font-bold text-sm text-center">❌ Payment was rejected</p>
                   <p className="text-xs text-red-500 text-center mt-1">Please contact us via WhatsApp for assistance</p>
+                </div>
+              )}
+
+              {/* I've Made This Payment Button - Shows only when PENDING */}
+              {showPayButton && (
+                <div className="mt-3">
+                  <button 
+                    onClick={() => markPaidMutation.mutate()} 
+                    disabled={markPaidMutation.isPending}
+                    className="w-full btn-primary flex items-center justify-center gap-2 !py-3"
+                  >
+                    {markPaidMutation.isPending ? (
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <CheckCircle className="w-5 h-5" />
+                    )}
+                    I Have Made the Transfer
+                  </button>
+                  <p className="text-xs text-center text-gray-400 mt-2">
+                    Tap after completing your bank transfer
+                  </p>
                 </div>
               )}
             </div>
           )}
 
+          {/* CONFIRMED Payment Status */}
           {order.paymentStatus === 'CONFIRMED' && (
-            <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200">
-              <p className="text-green-600 font-bold text-sm text-center">✅ Payment confirmed — Order is being prepared!</p>
+            <div className="mt-3 p-4 bg-green-50 dark:bg-green-900/20 rounded-xl border-2 border-green-500">
+              <div className="flex items-center justify-center gap-3">
+                <CheckCircle className="w-8 h-8 text-green-600" />
+                <div>
+                  <p className="text-green-700 dark:text-green-400 font-bold text-lg">Payment Confirmed! ✅</p>
+                  <p className="text-sm text-green-600 dark:text-green-300">Your order is now being prepared</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* CANCELLED Status */}
+          {order.status === 'CANCELLED' && (
+            <div className="mt-3 p-4 bg-red-50 dark:bg-red-900/20 rounded-xl border-2 border-red-500">
+              <div className="flex items-center justify-center gap-3">
+                <XCircle className="w-8 h-8 text-red-600" />
+                <div>
+                  <p className="text-red-700 dark:text-red-400 font-bold text-lg">Order Cancelled ❌</p>
+                  <p className="text-sm text-red-600 dark:text-red-300">
+                    {order.paymentStatus === 'REJECTED' ? 'Payment was rejected' : 'Order was cancelled'}
+                  </p>
+                </div>
+              </div>
             </div>
           )}
         </div>
 
         {/* Actions */}
         <div className="flex gap-3">
-          <a href={whatsappLink} target="_blank" rel="noopener noreferrer"
-            className="flex-1 flex items-center justify-center gap-2 py-3 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-xl transition-colors text-sm">
+          <a 
+            href={whatsappLink} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="flex-1 flex items-center justify-center gap-2 py-3 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-xl transition-colors text-sm"
+          >
             <MessageCircle className="w-4 h-4" /> WhatsApp Support
           </a>
           {canCancel && (
-            <button onClick={() => { if (confirm('Cancel this order?')) cancelMutation.mutate(); }}
+            <button 
+              onClick={() => { if (confirm('Cancel this order?')) cancelMutation.mutate(); }}
               disabled={cancelMutation.isPending}
-              className="flex-1 py-3 rounded-xl border-2 border-red-400 text-red-500 font-semibold text-sm hover:bg-red-50 transition-colors">
+              className="flex-1 py-3 rounded-xl border-2 border-red-400 text-red-500 font-semibold text-sm hover:bg-red-50 transition-colors"
+            >
               Cancel Order
             </button>
           )}
