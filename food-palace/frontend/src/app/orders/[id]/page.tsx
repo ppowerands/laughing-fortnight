@@ -8,7 +8,7 @@ import { ordersApi } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
 import Navbar from '@/components/Navbar';
 import { toast } from 'react-hot-toast';
-import { CheckCircle, Clock, Truck, XCircle, Package, MapPin, CreditCard, ArrowLeft } from 'lucide-react';
+import { CheckCircle, Clock, Truck, XCircle, Package, MapPin, CreditCard, ArrowLeft, AlertCircle } from 'lucide-react';
 
 const statusConfig: Record<string, { label: string; icon: any; color: string; bgColor: string }> = {
   PENDING: { label: 'Pending', icon: Clock, color: 'text-yellow-600', bgColor: 'bg-yellow-50 border-yellow-200' },
@@ -33,6 +33,7 @@ export default function OrderDetailsPage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const orderId = params.id as string;
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   const { data: response, isLoading, error } = useQuery({
     queryKey: ['order', orderId],
@@ -41,6 +42,37 @@ export default function OrderDetailsPage() {
   });
 
   const order = response?.data;
+
+  // 30-minute timer for pending orders
+  useEffect(() => {
+    if (!order || order.status !== 'PENDING' || order.paymentStatus === 'PAID') return;
+
+    const createdTime = new Date(order.createdAt).getTime();
+    const now = Date.now();
+    const elapsed = Math.floor((now - createdTime) / 1000);
+    const remaining = Math.max(1800 - elapsed, 0);
+
+    if (remaining <= 0) {
+      // Auto-cancel if 30 minutes passed
+      ordersApi.cancel(orderId).catch(() => {});
+      return;
+    }
+
+    setTimeLeft(remaining);
+
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev === null || prev <= 1) {
+          clearInterval(timer);
+          ordersApi.cancel(orderId).catch(() => {});
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [order, orderId]);
 
   const cancelOrderMutation = useMutation({
     mutationFn: () => ordersApi.cancel(orderId),
@@ -52,6 +84,12 @@ export default function OrderDetailsPage() {
       toast.error('Failed to cancel order');
     },
   });
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
 
   if (isLoading) {
     return (
@@ -88,6 +126,7 @@ export default function OrderDetailsPage() {
   const StatusIcon = statusConfig[order.status]?.icon || Clock;
   const statusInfo = statusConfig[order.status] || statusConfig.PENDING;
   const paymentInfo = paymentStatusConfig[order.paymentStatus] || paymentStatusConfig.PENDING;
+  const isPending = order.status === 'PENDING' && order.paymentStatus !== 'PAID';
   const isCancellable = ['PENDING', 'PREPARING'].includes(order.status) && order.paymentStatus !== 'PAID';
 
   return (
@@ -101,17 +140,35 @@ export default function OrderDetailsPage() {
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-2xl font-bold">Order #{order.orderNumber || order.id}</h1>
+          <h1 className="text-2xl font-bold">Order {order.orderNumber || `FPP${String(order.id).padStart(4, '0')}`}</h1>
           <span className={`ml-auto px-3 py-1 rounded-full text-sm font-medium ${statusInfo.bgColor} ${statusInfo.color}`}>
             {statusInfo.label}
           </span>
         </div>
 
+        {/* 30-Minute Timer */}
+        {isPending && timeLeft !== null && timeLeft > 0 && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 flex items-center gap-4">
+            <AlertCircle className="w-6 h-6 text-yellow-600" />
+            <div>
+              <p className="text-sm font-semibold text-yellow-700">Complete payment within 30 minutes</p>
+              <p className="text-2xl font-bold text-yellow-700">{formatTime(timeLeft)}</p>
+            </div>
+          </div>
+        )}
+
+        {isPending && timeLeft === 0 && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 flex items-center gap-4">
+            <XCircle className="w-6 h-6 text-red-600" />
+            <p className="text-sm font-semibold text-red-700">Order expired — please place a new order</p>
+          </div>
+        )}
+
         <div className="bg-white shadow rounded-lg p-6 mb-6 border">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <p className="text-sm text-gray-500">Order Date</p>
-              <p className="font-medium">{new Date(order.createdAt).toLocaleDateString('en-US', {
+              <p className="font-medium">{new Date(order.createdAt).toLocaleDateString('en-NG', {
                 weekday: 'short',
                 year: 'numeric',
                 month: 'short',
@@ -140,25 +197,19 @@ export default function OrderDetailsPage() {
             {order.items?.map((item: any, index: number) => (
               <div key={index} className="flex justify-between items-center py-4 first:pt-0 last:pb-0">
                 <div className="flex items-center gap-4">
-                  {item.image && (
-                    <img src={item.image} alt={item.name} className="w-16 h-16 object-cover rounded" />
-                  )}
                   <div>
                     <p className="font-medium">{item.name}</p>
                     <p className="text-sm text-gray-500">Qty: {item.quantity}</p>
-                    {item.variant && (
-                      <p className="text-sm text-gray-500">Variant: {item.variant}</p>
-                    )}
                   </div>
                 </div>
-                <p className="font-semibold">${(item.price * item.quantity).toFixed(2)}</p>
+                <p className="font-semibold">₦{(Number(item.price) * Number(item.quantity)).toFixed(2)}</p>
               </div>
             ))}
           </div>
           <div className="mt-4 pt-4 border-t">
             <div className="flex justify-between text-lg">
               <span className="font-semibold">Total</span>
-              <span className="font-bold text-blue-600">${order.total?.toFixed(2)}</span>
+              <span className="font-bold text-blue-600">₦{Number(order.total).toFixed(2)}</span>
             </div>
           </div>
         </div>
@@ -206,6 +257,14 @@ export default function OrderDetailsPage() {
         )}
 
         <div className="flex flex-wrap gap-4 mt-6">
+          {isPending && (
+            <Link
+              href={`/checkout?orderId=${orderId}`}
+              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+            >
+              Complete Payment
+            </Link>
+          )}
           {isCancellable && (
             <button
               onClick={() => {
@@ -219,14 +278,12 @@ export default function OrderDetailsPage() {
               {cancelOrderMutation.isPending ? 'Cancelling...' : 'Cancel Order'}
             </button>
           )}
-          
           <button
             onClick={() => window.print()}
             className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
           >
             Print Receipt
           </button>
-          
           <Link href="/orders" className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition">
             Back to Orders
           </Link>
