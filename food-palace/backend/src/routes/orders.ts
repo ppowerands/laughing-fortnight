@@ -42,15 +42,15 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const total = subtotal + deliveryFee;
     const orderNumber = await generateOrderNumber();
 
-    // Only set auto-cancel timer for DELIVERY orders
-    const autoCancel = (!isPickup && paymentMethod === 'BANK_TRANSFER') ? new Date(Date.now() + 30 * 60 * 1000) : null;
+    // ✅ FIX 1: Set auto-cancel for ALL bank transfers (pickup + delivery)
+    const autoCancel = paymentMethod === 'BANK_TRANSFER' ? new Date(Date.now() + 30 * 60 * 1000) : null;
 
     const order = await prisma.order.create({
       data: {
         orderNumber,
         userId: req.user!.id,
         paymentMethod,
-        paymentStatus: 'PENDING',
+        paymentStatus: 'AWAITING_CONFIRMATION', // ✅ FIX 2: Set to AWAITING_CONFIRMATION
         subtotal,
         deliveryFee,
         total,
@@ -66,7 +66,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
           create: {
             method: paymentMethod,
             amount: total,
-            status: 'PENDING'
+            status: 'AWAITING_CONFIRMATION' // ✅ FIX 3: Payment status also AWAITING_CONFIRMATION
           }
         },
       },
@@ -157,7 +157,6 @@ router.patch('/:id/payment', authenticate, requireAdmin, async (req: AuthRequest
     await prisma.payment.update({ where: { orderId: order.id }, data: { status: status as PaymentStatus, confirmedBy: req.user!.id, confirmedAt: status === 'CONFIRMED' ? new Date() : null, notes } });
     await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: status as PaymentStatus, autoCancelAt: null, ...(status === 'CONFIRMED' ? { status: 'PREPARING' } : status === 'REJECTED' ? { status: 'CANCELLED' } : {}) } });
 
-    // Mark related notifications as read when admin attends to payment
     await prisma.notification.updateMany({ where: { orderId: order.id, userId: null }, data: { isRead: true } });
 
     await prisma.notification.create({ data: { userId: order.userId, orderId: order.id, title: status === 'CONFIRMED' ? '✅ Payment Confirmed!' : '❌ Payment Rejected', message: status === 'CONFIRMED' ? `Payment for order #${order.orderNumber} confirmed! We are now preparing your order.` : `Payment for order #${order.orderNumber} was rejected. ${notes || 'Please contact us via WhatsApp.'}`, type: 'payment' } });
