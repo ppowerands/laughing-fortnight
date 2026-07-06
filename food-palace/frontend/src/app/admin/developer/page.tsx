@@ -1,12 +1,12 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { maintenanceApi } from '@/lib/api';
 import { Shield, Database, Activity, Trash2, Bell, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-export default function DeveloperPage() {
+function DeveloperContent() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const [confirmAction, setConfirmAction] = useState<string | null>(null);
@@ -201,5 +201,13 @@ export default function DeveloperPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function DeveloperPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <DeveloperContent />
+    </Suspense>
   );
 }
