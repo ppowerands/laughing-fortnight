@@ -63,7 +63,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex">
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-700 shadow-xl transform transition-transform duration-300 lg:translate-x-0 lg:static lg:shadow-none flex flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700">
-          <Link href="/admin" className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 cursor-pointer" onDoubleClick={() => window.location.href = '/admin/developer'}>
             <div className="w-9 h-9 bg-blue-700 rounded-xl flex items-center justify-center">
               <ChefHat className="w-5 h-5 text-white" />
             </div>
@@ -71,7 +71,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <p className="font-black text-sm text-gray-900 dark:text-white leading-tight">FOOD PALACE</p>
               <p className="text-[10px] text-gray-400 tracking-widest uppercase">Admin Panel</p>
             </div>
-          </Link>
+          </div>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1 rounded-lg hover:bg-gray-100">
             <X className="w-5 h-5 text-gray-500" />
           </button>
@@ -90,7 +90,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </div>
             </div>
           </div>
-        </Link>
+        </div>
 
         <nav className="p-3 space-y-0.5 flex-1 overflow-y-auto">
           {allNavItems.map(({ href, label, icon: Icon, exact, superAdminOnly }: any) => (
@@ -112,14 +112,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               {href === '/admin/developer' && (
                 <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold">DEV</span>
               )}
-            </Link>
+            </div>
           ))}
         </nav>
 
         <div className="p-3 border-t border-gray-100 dark:border-gray-700 space-y-1">
           <Link href="/" className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all">
             <BarChart3 className="w-5 h-5" /> View Website
-          </Link>
+          </div>
           <button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all">
             <LogOut className="w-5 h-5" /> Logout
           </button>
@@ -142,7 +142,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             {pendingPayments > 0 && (
               <Link href="/admin/payments" className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-yellow-100 text-yellow-700 text-xs font-semibold hover:bg-yellow-200 transition-colors animate-pulse">
                 <CreditCard className="w-4 h-4" /> {pendingPayments} pending
-              </Link>
+              </div>
             )}
             <Link href="/admin/orders" className="relative p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
               <Bell className="w-5 h-5 text-gray-600 dark:text-gray-300" />
@@ -151,7 +151,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
-            </Link>
+            </div>
           </div>
         </header>
         <main className="flex-1 p-4 md:p-6 overflow-x-hidden">{children}</main>
