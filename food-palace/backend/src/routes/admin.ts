@@ -188,8 +188,25 @@ router.get('/customers', authenticate, requireAdmin, async (req: AuthRequest, re
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+router.get("/system-health", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const [totalOrders, totalCustomers, totalProducts, totalCategories, revenueData, pendingPayments] = await Promise.all([
+      prisma.order.count(),
+      prisma.user.count({ where: { role: "CUSTOMER" } }),
+      prisma.product.count(),
+      prisma.category.count(),
+      prisma.order.aggregate({ _sum: { total: true }, where: { status: { notIn: ["CANCELLED"] } } }),
+      prisma.order.count({ where: { paymentStatus: "AWAITING_CONFIRMATION" } }),
+    ]);
+    res.json({
+      database: { totalOrders, totalCustomers, totalProducts, totalCategories, totalRevenue: revenueData._sum.total || 0, pendingPayments },
+      system: { backend: "operational", database: "connected", api: "operational", timestamp: new Date().toISOString() },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message, system: { backend: "error", database: "error", api: "error" } });
+  }
+});
 // System health + DB stats (super admin only)
-router.get('/system-health', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const [totalOrders, totalCustomers, totalProducts, totalCategories, revenueData, pendingPayments] = await Promise.all([
       prisma.order.count(),
@@ -225,6 +242,30 @@ router.delete('/maintenance/clear-test-orders', authenticate, requireAdmin, asyn
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+router.delete('/maintenance/clear-notifications', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await prisma.notification.deleteMany({ where: { isRead: true } });
+    res.json({ message: `Cleared ${result.count} read notifications` });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// Clear test orders
+router.delete('/maintenance/clear-test-orders', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const testOrders = await prisma.order.findMany({
+      where: { status: 'CANCELLED', paymentStatus: { in: ['PENDING', 'REJECTED'] } },
+      select: { id: true },
+    });
+    const ids = testOrders.map(o => o.id);
+    await prisma.notification.deleteMany({ where: { orderId: { in: ids } } });
+    await prisma.orderItem.deleteMany({ where: { orderId: { in: ids } } });
+    await prisma.payment.deleteMany({ where: { orderId: { in: ids } } });
+    await prisma.order.deleteMany({ where: { id: { in: ids } } });
+    res.json({ message: `Cleared ${ids.length} cancelled test orders` });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// Clear notifications
 router.delete('/maintenance/clear-notifications', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const result = await prisma.notification.deleteMany({ where: { isRead: true } });
