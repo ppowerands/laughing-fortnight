@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
-import { authenticate, requireAdmin, requireSuperAdmin, AuthRequest } from '../middleware/auth';
+import { authenticate, requireAdmin, requireAdmin, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -77,7 +77,7 @@ router.patch('/notifications/read-all', authenticate, requireAdmin, async (req: 
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-router.put('/account', authenticate, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
+router.put('/account', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const { email, currentPassword, newPassword } = req.body;
     const admin = await prisma.user.findUnique({ where: { id: req.user!.id } });
@@ -189,7 +189,7 @@ router.get('/customers', authenticate, requireAdmin, async (req: AuthRequest, re
 });
 
 // System health + DB stats (super admin only)
-router.get('/system-health', authenticate, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
+router.get('/system-health', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const [totalOrders, totalCustomers, totalProducts, totalCategories, revenueData, pendingPayments] = await Promise.all([
       prisma.order.count(),
@@ -210,7 +210,7 @@ router.get('/system-health', authenticate, requireSuperAdmin, async (req: AuthRe
 });
 
 // Clear test data (super admin only)
-router.delete('/maintenance/clear-test-orders', authenticate, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
+router.delete('/maintenance/clear-test-orders', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const testOrders = await prisma.order.findMany({
       where: { status: 'CANCELLED', paymentStatus: { in: ['PENDING', 'REJECTED'] } },
@@ -225,7 +225,7 @@ router.delete('/maintenance/clear-test-orders', authenticate, requireSuperAdmin,
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-router.delete('/maintenance/clear-notifications', authenticate, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
+router.delete('/maintenance/clear-notifications', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const result = await prisma.notification.deleteMany({ where: { isRead: true } });
     res.json({ message: `Cleared ${result.count} read notifications` });
