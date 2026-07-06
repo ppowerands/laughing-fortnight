@@ -55,7 +55,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const unreadCount = notifData?.unreadCount || 0;
   const pendingPayments = pendingData?.total || 0;
   const isActive = (href: string, exact?: boolean) => exact ? pathname === href : pathname.startsWith(href);
-  const allNavItems = isSuperAdmin ? [...adminNavItems, ...superAdminNavItems] : adminNavItems;
+  const allNavItems = adminNavItems;
 
   if (!isAuthenticated || user?.role === 'CUSTOMER') return null;
 
