@@ -120,3 +120,18 @@ export const contentApi = {
 export const adminAccountApi = {
   update: (data: any) => api.put('/admin/account', data),
 };
+
+export const orderHistoryApi = {
+  getAll: (params?: any) => api.get('/admin/order-history', { params }),
+};
+
+export const customersApi = {
+  getAll: (params?: any) => api.get('/admin/customers', { params }),
+  toggle: (id: string) => api.patch(`/admin/users/${id}/toggle`),
+};
+
+export const maintenanceApi = {
+  getHealth: () => api.get('/admin/system-health'),
+  clearTestOrders: () => api.delete('/admin/maintenance/clear-test-orders'),
+  clearNotifications: () => api.delete('/admin/maintenance/clear-notifications'),
+};

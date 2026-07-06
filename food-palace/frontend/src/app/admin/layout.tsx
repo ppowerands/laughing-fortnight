@@ -2,22 +2,31 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, ShoppingBag, UtensilsCrossed, Tags, Truck, Settings, Users, LogOut, Menu, X, Bell, ChefHat, BarChart3, FileText, UserCircle, CreditCard } from 'lucide-react';
+import {
+  LayoutDashboard, ShoppingBag, UtensilsCrossed, Tags, Truck,
+  Settings, Users, LogOut, Menu, X, Bell, ChefHat, BarChart3,
+  FileText, UserCircle, CreditCard, History, Shield, Code2
+} from 'lucide-react';
 import { useAuthStore } from '@/lib/auth-store';
 import { adminApi, ordersApi } from '@/lib/api';
 import { useQuery } from '@tanstack/react-query';
 
-const navItems = [
+const adminNavItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/admin/orders', label: 'Orders', icon: ShoppingBag },
+  { href: '/admin/order-history', label: 'Order History', icon: History },
   { href: '/admin/payments', label: 'Payments', icon: CreditCard },
   { href: '/admin/products', label: 'Products', icon: UtensilsCrossed },
   { href: '/admin/categories', label: 'Categories', icon: Tags },
-  { href: '/admin/delivery', label: 'Delivery Zones', icon: Truck },
   { href: '/admin/users', label: 'Customers', icon: Users },
+  { href: '/admin/delivery', label: 'Delivery Zones', icon: Truck },
   { href: '/admin/content', label: 'Website Content', icon: FileText },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
   { href: '/admin/profile', label: 'My Profile', icon: UserCircle },
+];
+
+const superAdminNavItems = [
+  { href: '/admin/developer', label: 'Developer', icon: Code2, superAdminOnly: true },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -25,6 +34,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const router = useRouter();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isSuperAdmin = user?.role === 'ADMIN';
 
   useEffect(() => {
     if (!isAuthenticated) { router.push('/login'); return; }
@@ -38,7 +48,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     enabled: isAuthenticated && user?.role !== 'CUSTOMER',
   });
 
-  const { data: pendingPaymentsData } = useQuery({
+  const { data: pendingData } = useQuery({
     queryKey: ['pending-payments-count'],
     queryFn: () => ordersApi.getAll({ paymentStatus: 'AWAITING_CONFIRMATION', limit: 1 }).then(r => r.data),
     refetchInterval: 15000,
@@ -46,8 +56,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   });
 
   const unreadCount = notifData?.unreadCount || 0;
-  const pendingPayments = pendingPaymentsData?.total || 0;
+  const pendingPayments = pendingData?.total || 0;
   const isActive = (href: string, exact?: boolean) => exact ? pathname === href : pathname.startsWith(href);
+  const allNavItems = isSuperAdmin ? [...adminNavItems, ...superAdminNavItems] : adminNavItems;
 
   if (!isAuthenticated || user?.role === 'CUSTOMER') return null;
 
@@ -69,28 +80,40 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </button>
         </div>
 
-        <Link href="/admin/profile" className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+        <Link href="/admin/profile" onClick={() => setSidebarOpen(false)} className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-blue-700 rounded-full flex items-center justify-center">
               <span className="text-white text-sm font-bold">{user?.name?.[0]}</span>
             </div>
             <div className="min-w-0">
               <p className="font-semibold text-sm text-gray-900 dark:text-white truncate">{user?.name}</p>
-              <p className="text-xs text-gray-400 capitalize">{user?.role?.toLowerCase()}</p>
+              <div className="flex items-center gap-1">
+                <p className="text-xs text-gray-400 capitalize">{user?.role?.toLowerCase()}</p>
+                {isSuperAdmin && <Shield className="w-3 h-3 text-blue-500" />}
+              </div>
             </div>
           </div>
         </Link>
 
-        <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
-          {navItems.map(({ href, label, icon: Icon, exact }) => (
+        <nav className="p-3 space-y-0.5 flex-1 overflow-y-auto">
+          {allNavItems.map(({ href, label, icon: Icon, exact, superAdminOnly }: any) => (
             <Link key={href} href={href} onClick={() => setSidebarOpen(false)}
-              className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive(href, exact) ? 'bg-blue-700 text-white shadow-md' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+              className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                isActive(href, exact)
+                  ? 'bg-blue-700 text-white shadow-md'
+                  : superAdminOnly
+                  ? 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+              }`}>
               <div className="flex items-center gap-3">
                 <Icon className="w-5 h-5 shrink-0" />
                 {label}
               </div>
               {href === '/admin/payments' && pendingPayments > 0 && (
                 <span className="bg-yellow-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">{pendingPayments > 9 ? '9+' : pendingPayments}</span>
+              )}
+              {href === '/admin/developer' && (
+                <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold">DEV</span>
               )}
             </Link>
           ))}
@@ -115,7 +138,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </button>
           <div className="hidden lg:block">
             <h1 className="text-lg font-bold text-gray-900 dark:text-white">
-              {navItems.find(n => isActive(n.href, n.exact))?.label || 'Admin'}
+              {allNavItems.find((n: any) => isActive(n.href, n.exact))?.label || 'Admin'}
             </h1>
           </div>
           <div className="flex items-center gap-2 ml-auto">
