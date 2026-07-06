@@ -13,7 +13,6 @@ function DeveloperContent() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [secret, setSecret] = useState('');
 
-  // Check URL for secret key on load
   useEffect(() => {
     const urlSecret = searchParams.get('secret');
     if (urlSecret === 'foodpalace-dev-2024') {
@@ -21,16 +20,15 @@ function DeveloperContent() {
     }
   }, [searchParams]);
 
-  // If not authorized, show the secret key form
   if (!isAuthorized) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl max-w-md w-full">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">🔐 Developer Access</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Enter the developer key to access this section.</p>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">🔐 Advanced Settings</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Enter the access key to view advanced settings.</p>
           <input
             type="password"
-            placeholder="Enter secret key"
+            placeholder="Enter access key"
             value={secret}
             onChange={(e) => setSecret(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-4"
@@ -42,13 +40,12 @@ function DeveloperContent() {
           >
             Unlock
           </button>
-          <p className="text-xs text-gray-400 mt-4">Hint: Ask the developer for the key.</p>
+          <p className="text-xs text-gray-400 mt-4">Contact your administrator for the key.</p>
         </div>
       </div>
     );
   }
 
-  // Your full developer panel code here
   const { data: health, isLoading, refetch } = useQuery({
     queryKey: ['system-health'],
     queryFn: () => maintenanceApi.getHealth().then(r => r.data),
@@ -86,11 +83,11 @@ function DeveloperContent() {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3">
-        <Shield className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl flex items-start gap-3">
+        <Shield className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
         <div>
-          <p className="font-bold text-red-700 dark:text-red-400 text-sm">Developer Section</p>
-          <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">Be careful with destructive actions.</p>
+          <p className="font-bold text-blue-700 dark:text-blue-400 text-sm">Advanced Settings</p>
+          <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">System administration and maintenance tools.</p>
         </div>
       </div>
 
@@ -206,7 +203,7 @@ function DeveloperContent() {
 
 export default function DeveloperPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense fallback={<div className="flex justify-center items-center h-64">Loading...</div>}>
       <DeveloperContent />
     </Suspense>
   );
