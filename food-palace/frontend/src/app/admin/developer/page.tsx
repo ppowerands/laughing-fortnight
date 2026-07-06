@@ -1,16 +1,11 @@
 'use client';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useAuthStore } from '@/lib/auth-store';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
 import { maintenanceApi } from '@/lib/api';
 import { Shield, Database, Activity, Trash2, Bell, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function DeveloperPage() {
-  const { user } = useAuthStore();
-  const router = useRouter();
   const queryClient = useQueryClient();
   const [confirmAction, setConfirmAction] = useState<string | null>(null);
   const [secret, setSecret] = useState('');
