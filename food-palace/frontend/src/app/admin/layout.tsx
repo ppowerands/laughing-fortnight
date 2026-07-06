@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   LayoutDashboard, ShoppingBag, UtensilsCrossed, Tags, Truck,
   Settings, Users, LogOut, Menu, X, Bell, ChefHat, BarChart3,
-  FileText, UserCircle, CreditCard, History, Shield, Code2
+  FileText, UserCircle, CreditCard, History, Shield
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/auth-store';
 import { adminApi, ordersApi } from '@/lib/api';
@@ -25,9 +25,6 @@ const adminNavItems = [
   { href: '/admin/profile', label: 'My Profile', icon: UserCircle },
 ];
 
-const superAdminNavItems = [
-  { href: '/admin/developer', label: 'Developer', icon: Code2, superAdminOnly: true },
-];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, logout } = useAuthStore();
