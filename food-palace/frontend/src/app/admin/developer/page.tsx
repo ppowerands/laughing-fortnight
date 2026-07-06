@@ -1,15 +1,25 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { maintenanceApi } from '@/lib/api';
 import { Shield, Database, Activity, Trash2, Bell, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function DeveloperPage() {
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const [confirmAction, setConfirmAction] = useState<string | null>(null);
-  const [secret, setSecret] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [secret, setSecret] = useState('');
+
+  // Check URL for secret key on load
+  useEffect(() => {
+    const urlSecret = searchParams.get('secret');
+    if (urlSecret === 'foodpalace-dev-2024') {
+      setIsAuthorized(true);
+    }
+  }, [searchParams]);
 
   // If not authorized, show the secret key form
   if (!isAuthorized) {
