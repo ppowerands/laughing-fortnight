@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle, Clock, Truck, Package, XCircle, MessageCircle, Copy, Store, RefreshCw } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import { ordersApi } from '@/lib/api';
-import { useAuthStore, RefreshCw } from '@/lib/auth-store';
+import { useAuthStore } from '@/lib/auth-store';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 
