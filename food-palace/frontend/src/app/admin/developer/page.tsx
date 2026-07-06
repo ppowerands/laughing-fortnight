@@ -16,18 +16,6 @@ export default function DeveloperPage() {
   const [secret, setSecret] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
 
-  // Check if user is admin first
-  useEffect(() => {
-    if (user && user.role !== 'ADMIN') {
-      router.push('/admin');
-    }
-  }, [user]);
-
-  // If not admin, show nothing
-  if (!user || user.role !== 'ADMIN') {
-    return null;
-  }
-
   // If not authorized, show the secret key form
   if (!isAuthorized) {
     return (
