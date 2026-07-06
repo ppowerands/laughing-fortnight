@@ -14,9 +14,16 @@ export default function DeveloperPage() {
   const queryClient = useQueryClient();
   const [confirmAction, setConfirmAction] = useState<string | null>(null);
 
+  // Only allow YOUR email to access this page
   useEffect(() => {
-    if (user && user.role !== 'ADMIN') router.push('/admin');
+    if (user && user.email !== 'admin@foodpalace.ng') {
+      router.push('/admin');
+    }
   }, [user]);
+
+  if (!user || user.email !== 'admin@foodpalace.ng') {
+    return null;
+  }
 
   const { data: health, isLoading, refetch } = useQuery({
     queryKey: ['system-health'],
