@@ -28,6 +28,7 @@ const adminNavItems = [
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, logout } = useAuthStore();
   const router = useRouter();
+  const router = useRouter();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isSuperAdmin = user?.role === 'ADMIN';
@@ -62,7 +63,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex">
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-700 shadow-xl transform transition-transform duration-300 lg:translate-x-0 lg:static lg:shadow-none flex flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700">
-          <div className="flex items-center gap-2.5 cursor-pointer" onDoubleClick={() => window.location.href = '/admin/developer'}>
+          <div className="flex items-center gap-2.5 cursor-pointer" onDoubleClick={() => router.push("/admin/developer")}>
             <div className="w-9 h-9 bg-blue-700 rounded-xl flex items-center justify-center">
               <ChefHat className="w-5 h-5 text-white" />
             </div>
