@@ -52,6 +52,7 @@ model User {
   favorites     Favorite[]
   addresses     DeliveryAddress[]
   notifications Notification[]
+  adminLogs     AdminLog[]
 }
 
 model Category {
@@ -253,5 +254,30 @@ model SiteContent {
   id        String   @id @default(cuid())
   key       String   @unique
   value     String
+  updatedAt DateTime @updatedAt
+}
+
+// ─── NEW MODELS ────────────────────────────────────────────────────────
+
+model AdminLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  details   Json?
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([action])
+}
+
+model FeatureFlag {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  enabled   Boolean  @default(false)
   updatedAt DateTime @updatedAt
 }
