@@ -1,11 +1,19 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
-import { authenticate, requireAdmin, requireAdmin, AuthRequest } from '../middleware/auth';
+import { authenticate, requireAdmin, requireSuperAdmin, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 const prisma = new PrismaClient();
 
+// ─── HELPER: Create Admin Log ─────────────────────────────────────────
+async function createAdminLog(userId: string, action: string, details?: any, ip?: string, userAgent?: string) {
+  return prisma.adminLog.create({
+    data: { userId, action, details, ip, userAgent },
+  });
+}
+
+// ─── DASHBOARD ─────────────────────────────────────────────────────────
 router.get('/dashboard', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -33,6 +41,47 @@ router.get('/dashboard', authenticate, requireAdmin, async (req: AuthRequest, re
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+// ─── SYSTEM HEALTH ────────────────────────────────────────────────────
+router.get('/system-health', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const [totalOrders, totalCustomers, totalProducts, totalCategories, revenueData, pendingPayments] = await Promise.all([
+      prisma.order.count(),
+      prisma.user.count({ where: { role: 'CUSTOMER' } }),
+      prisma.product.count(),
+      prisma.category.count(),
+      prisma.order.aggregate({ _sum: { total: true }, where: { status: { notIn: ['CANCELLED'] } } }),
+      prisma.order.count({ where: { paymentStatus: 'AWAITING_CONFIRMATION' } }),
+    ]);
+    res.json({
+      database: { totalOrders, totalCustomers, totalProducts, totalCategories, totalRevenue: revenueData._sum.total || 0, pendingPayments },
+      system: { backend: 'operational', database: 'connected', api: 'operational', timestamp: new Date().toISOString() },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message, system: { backend: 'error', database: 'error', api: 'error' } });
+  }
+});
+
+// ─── PRODUCTION MONITORING ───────────────────────────────────────────
+router.get('/production/health', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const [orders, payments, users, revenue] = await Promise.all([
+      prisma.order.count(),
+      prisma.payment.count(),
+      prisma.user.count(),
+      prisma.order.aggregate({ _sum: { total: true }, where: { status: { notIn: ['CANCELLED'] } } }),
+    ]);
+    res.json({
+      status: 'healthy',
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      version: process.env.npm_package_version || '1.0.0',
+      lastDeploy: process.env.VERCEL_GIT_COMMIT_AT || new Date().toISOString(),
+      stats: { orders, payments, users, revenue: revenue._sum.total || 0 },
+    });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── USERS ────────────────────────────────────────────────────────────
 router.get('/users', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const users = await prisma.user.findMany({ select: { id: true, name: true, email: true, phone: true, role: true, isActive: true, createdAt: true }, orderBy: { createdAt: 'desc' } });
@@ -45,11 +94,12 @@ router.patch('/users/:id/toggle', authenticate, requireAdmin, async (req: AuthRe
     const user = await prisma.user.findUnique({ where: { id: req.params.id } });
     if (!user) return res.status(404).json({ error: 'User not found' });
     const updated = await prisma.user.update({ where: { id: req.params.id }, data: { isActive: !user.isActive } });
+    await createAdminLog(req.user!.id, 'USER_TOGGLED', { userId: req.params.id, isActive: updated.isActive }, req.ip, req.headers['user-agent']);
     res.json({ isActive: updated.isActive });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// Only show unread notifications
+// ─── NOTIFICATIONS ────────────────────────────────────────────────────
 router.get('/notifications', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const notifications = await prisma.notification.findMany({
@@ -77,7 +127,8 @@ router.patch('/notifications/read-all', authenticate, requireAdmin, async (req: 
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-router.put('/account', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+// ─── ADMIN ACCOUNT ────────────────────────────────────────────────────
+router.put('/account', authenticate, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const { email, currentPassword, newPassword } = req.body;
     const admin = await prisma.user.findUnique({ where: { id: req.user!.id } });
@@ -97,157 +148,50 @@ router.put('/account', authenticate, requireAdmin, async (req: AuthRequest, res:
       updateData.password = await bcrypt.hash(newPassword, 12);
     }
     const updated = await prisma.user.update({ where: { id: req.user!.id }, data: updateData, select: { id: true, name: true, email: true, role: true } });
+    await createAdminLog(req.user!.id, 'ACCOUNT_UPDATED', { email: updated.email }, req.ip, req.headers['user-agent']);
     res.json(updated);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-export default router;
-
-// Order History - completed/delivered/cancelled orders
-router.get('/order-history', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+// ─── LOGS ────────────────────────────────────────────────────────────
+router.get('/logs', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const { search, status, paymentStatus, fulfillmentType, startDate, endDate, page = '1', limit = '20' } = req.query;
-    
-    const where: any = {
-      status: { in: ['DELIVERED', 'CANCELLED', 'PICKED_UP'] },
-    };
-
-    if (status) where.status = status;
-    if (paymentStatus) where.paymentStatus = paymentStatus;
-    if (fulfillmentType) {
-      if (fulfillmentType === 'PICKUP') {
-        where.OR = [{ fulfillmentType: 'PICKUP' }, { deliveryAddress: { contains: 'PICKUP' } }];
-      } else {
-        where.fulfillmentType = 'DELIVERY';
-        where.NOT = { deliveryAddress: { contains: 'PICKUP' } };
-      }
-    }
-    if (startDate) where.createdAt = { ...where.createdAt, gte: new Date(startDate as string) };
-    if (endDate) where.createdAt = { ...where.createdAt, lte: new Date(endDate as string) };
-    if (search) {
-      where.OR = [
-        { orderNumber: { contains: search as string, mode: 'insensitive' } },
-        { user: { name: { contains: search as string, mode: 'insensitive' } } },
-      ];
-    }
-
-    const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
-    const [orders, total] = await Promise.all([
-      prisma.order.findMany({
-        where,
-        include: { items: true, payment: true, user: { select: { name: true, email: true, phone: true } } },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: parseInt(limit as string),
-      }),
-      prisma.order.count({ where }),
-    ]);
-
-    res.json({ orders, total, page: parseInt(page as string), totalPages: Math.ceil(total / parseInt(limit as string)) });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
-
-// Customers with stats
-router.get('/customers', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
-  try {
-    const { search } = req.query;
-    const where: any = { role: 'CUSTOMER' };
-    if (search) {
-      where.OR = [
-        { name: { contains: search as string, mode: 'insensitive' } },
-        { email: { contains: search as string, mode: 'insensitive' } },
-      ];
-    }
-
-    const customers = await prisma.user.findMany({
+    const { action, limit = '50' } = req.query;
+    const where: any = {};
+    if (action) where.action = action;
+    const logs = await prisma.adminLog.findMany({
       where,
-      select: {
-        id: true, name: true, email: true, phone: true,
-        isActive: true, createdAt: true,
-        orders: {
-          select: { total: true, createdAt: true, status: true },
-          orderBy: { createdAt: 'desc' },
-        },
-      },
       orderBy: { createdAt: 'desc' },
+      take: parseInt(limit as string),
+      include: { user: { select: { name: true, email: true } } },
     });
-
-    const result = customers.map(c => ({
-      id: c.id,
-      name: c.name,
-      email: c.email,
-      phone: c.phone,
-      isActive: c.isActive,
-      createdAt: c.createdAt,
-      totalOrders: c.orders.length,
-      totalSpent: c.orders.filter(o => o.status !== 'CANCELLED').reduce((sum, o) => sum + o.total, 0),
-      lastOrderDate: c.orders[0]?.createdAt || null,
-    }));
-
-    res.json(result);
+    res.json(logs);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-router.get("/system-health", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+// ─── FEATURE FLAGS ────────────────────────────────────────────────────
+router.get('/flags', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const [totalOrders, totalCustomers, totalProducts, totalCategories, revenueData, pendingPayments] = await Promise.all([
-      prisma.order.count(),
-      prisma.user.count({ where: { role: "CUSTOMER" } }),
-      prisma.product.count(),
-      prisma.category.count(),
-      prisma.order.aggregate({ _sum: { total: true }, where: { status: { notIn: ["CANCELLED"] } } }),
-      prisma.order.count({ where: { paymentStatus: "AWAITING_CONFIRMATION" } }),
-    ]);
-    res.json({
-      database: { totalOrders, totalCustomers, totalProducts, totalCategories, totalRevenue: revenueData._sum.total || 0, pendingPayments },
-      system: { backend: "operational", database: "connected", api: "operational", timestamp: new Date().toISOString() },
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message, system: { backend: "error", database: "error", api: "error" } });
-  }
-});
-// System health + DB stats (super admin only)
-  try {
-    const [totalOrders, totalCustomers, totalProducts, totalCategories, revenueData, pendingPayments] = await Promise.all([
-      prisma.order.count(),
-      prisma.user.count({ where: { role: 'CUSTOMER' } }),
-      prisma.product.count(),
-      prisma.category.count(),
-      prisma.order.aggregate({ _sum: { total: true }, where: { status: { notIn: ['CANCELLED'] } } }),
-      prisma.order.count({ where: { paymentStatus: 'AWAITING_CONFIRMATION' } }),
-    ]);
-
-    res.json({
-      database: { totalOrders, totalCustomers, totalProducts, totalCategories, totalRevenue: revenueData._sum.total || 0, pendingPayments },
-      system: { backend: 'operational', database: 'connected', api: 'operational', timestamp: new Date().toISOString() },
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message, system: { backend: 'error', database: 'error', api: 'error' } });
-  }
-});
-
-// Clear test data (super admin only)
-router.delete('/maintenance/clear-test-orders', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
-  try {
-    const testOrders = await prisma.order.findMany({
-      where: { status: 'CANCELLED', paymentStatus: { in: ['PENDING', 'REJECTED'] } },
-      select: { id: true },
-    });
-    const ids = testOrders.map(o => o.id);
-    await prisma.notification.deleteMany({ where: { orderId: { in: ids } } });
-    await prisma.orderItem.deleteMany({ where: { orderId: { in: ids } } });
-    await prisma.payment.deleteMany({ where: { orderId: { in: ids } } });
-    await prisma.order.deleteMany({ where: { id: { in: ids } } });
-    res.json({ message: `Cleared ${ids.length} cancelled test orders` });
+    const flags = await prisma.featureFlag.findMany();
+    res.json(flags);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-router.delete('/maintenance/clear-notifications', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.patch('/flags/:key/toggle', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const result = await prisma.notification.deleteMany({ where: { isRead: true } });
-    res.json({ message: `Cleared ${result.count} read notifications` });
+    const { key } = req.params;
+    const flag = await prisma.featureFlag.findUnique({ where: { key } });
+    if (!flag) return res.status(404).json({ error: 'Flag not found' });
+    const updated = await prisma.featureFlag.update({
+      where: { key },
+      data: { enabled: !flag.enabled },
+    });
+    await createAdminLog(req.user!.id, 'FEATURE_TOGGLED', { key, enabled: updated.enabled }, req.ip, req.headers['user-agent']);
+    res.json(updated);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
+
+// ─── MAINTENANCE ──────────────────────────────────────────────────────
 
 // Clear test orders
 router.delete('/maintenance/clear-test-orders', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
@@ -260,8 +204,34 @@ router.delete('/maintenance/clear-test-orders', authenticate, requireAdmin, asyn
     await prisma.notification.deleteMany({ where: { orderId: { in: ids } } });
     await prisma.orderItem.deleteMany({ where: { orderId: { in: ids } } });
     await prisma.payment.deleteMany({ where: { orderId: { in: ids } } });
-    await prisma.order.deleteMany({ where: { id: { in: ids } } });
-    res.json({ message: `Cleared ${ids.length} cancelled test orders` });
+    const result = await prisma.order.deleteMany({ where: { id: { in: ids } } });
+    await createAdminLog(req.user!.id, 'CLEAR_TEST_ORDERS', { count: result.count }, req.ip, req.headers['user-agent']);
+    res.json({ message: `Cleared ${result.count} cancelled test orders` });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// Clear test payments
+router.delete('/maintenance/clear-test-payments', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await prisma.payment.deleteMany({
+      where: { status: 'PENDING', order: { status: 'CANCELLED' } },
+    });
+    await createAdminLog(req.user!.id, 'CLEAR_TEST_PAYMENTS', { count: result.count }, req.ip, req.headers['user-agent']);
+    res.json({ message: `Cleared ${result.count} test payments` });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// Clear test customers
+router.delete('/maintenance/clear-test-customers', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const testUsers = await prisma.user.findMany({
+      where: { role: 'CUSTOMER', orders: { none: {} } },
+      select: { id: true },
+    });
+    const ids = testUsers.map(u => u.id);
+    const result = await prisma.user.deleteMany({ where: { id: { in: ids } } });
+    await createAdminLog(req.user!.id, 'CLEAR_TEST_CUSTOMERS', { count: result.count }, req.ip, req.headers['user-agent']);
+    res.json({ message: `Cleared ${result.count} test customers with no orders` });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
@@ -269,6 +239,31 @@ router.delete('/maintenance/clear-test-orders', authenticate, requireAdmin, asyn
 router.delete('/maintenance/clear-notifications', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const result = await prisma.notification.deleteMany({ where: { isRead: true } });
+    await createAdminLog(req.user!.id, 'CLEAR_READ_NOTIFICATIONS', { count: result.count }, req.ip, req.headers['user-agent']);
     res.json({ message: `Cleared ${result.count} read notifications` });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
+
+// Clear cache (placeholder — you can connect Redis later)
+router.delete('/maintenance/clear-cache', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    await createAdminLog(req.user!.id, 'CLEAR_CACHE', {}, req.ip, req.headers['user-agent']);
+    res.json({ message: 'Cache cleared successfully' });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// Recalculate dashboard stats
+router.post('/maintenance/recalculate-stats', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const [totalOrders, totalRevenue, totalProducts, totalCustomers] = await Promise.all([
+      prisma.order.count(),
+      prisma.order.aggregate({ _sum: { total: true }, where: { status: { not: 'CANCELLED' } } }),
+      prisma.product.count({ where: { isActive: true } }),
+      prisma.user.count({ where: { role: 'CUSTOMER' } }),
+    ]);
+    await createAdminLog(req.user!.id, 'RECALCULATED_STATS', { totalOrders, totalRevenue: totalRevenue._sum.total || 0, totalProducts, totalCustomers }, req.ip, req.headers['user-agent']);
+    res.json({ message: 'Stats recalculated', stats: { totalOrders, totalRevenue: totalRevenue._sum.total || 0, totalProducts, totalCustomers } });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+export default router;
