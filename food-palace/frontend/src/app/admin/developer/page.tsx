@@ -9,30 +9,7 @@ import {
   BarChart3, FileText, AlertOctagon, UserCheck, UserX, List,
   ToggleLeft, ToggleRight
 } from 'lucide-react';
-
-function getToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem('food-palace-auth');
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed?.state?.token || null;
-  } catch { return null; }
-}
-
-async function apiFetch(path: string, method = 'GET') {
-  const token = getToken();
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
-  const res = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
-}
+import { logsApi, flagsApi, productionApi, maintenanceApi } from '@/lib/api';
 
 function StatusBadge({ status }: { status: string }) {
   const ok = ['operational', 'connected'].includes(status);
@@ -44,14 +21,17 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function FeatureToggle({ label, enabled, onChange }: { label: string; enabled: boolean; onChange: () => void }) {
+function FeatureToggle({ label, enabled, onChange, loading }: { label: string; enabled: boolean; onChange: () => void; loading?: boolean }) {
   return (
     <button
       onClick={onChange}
-      className="flex items-center justify-between w-full px-4 py-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+      disabled={loading}
+      className="flex items-center justify-between w-full px-4 py-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
     >
       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</span>
-      {enabled ? (
+      {loading ? (
+        <div className="w-6 h-6 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+      ) : enabled ? (
         <ToggleRight className="w-6 h-6 text-green-600" />
       ) : (
         <ToggleLeft className="w-6 h-6 text-gray-400" />
@@ -71,23 +51,17 @@ function DeveloperContent() {
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
-
-  // Feature flags
-  const [flags, setFlags] = useState({
-    maintenanceMode: false,
-    demoMode: false,
-    onlineOrdering: true,
-    pickup: true,
-    delivery: true,
-    notifications: true,
-  });
+  const [flags, setFlags] = useState<Record<string, boolean>>({});
+  const [flagsLoading, setFlagsLoading] = useState(false);
+  const [prodHealth, setProdHealth] = useState<any>(null);
+  const [prodHealthLoading, setProdHealthLoading] = useState(false);
 
   // ── Fetch Health ──────────────────────────────────────────────────────
   const fetchHealth = useCallback(async () => {
     setLoading(true);
     setHealthError('');
     try {
-      const data = await apiFetch('/admin/system-health');
+      const data = await maintenanceApi.getHealth().then(r => r.data);
       setHealth(data);
       setLastChecked(new Date());
     } catch (err: any) {
@@ -102,37 +76,60 @@ function DeveloperContent() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchHealth();
-    const id = setInterval(fetchHealth, 30000);
-    return () => clearInterval(id);
-  }, [fetchHealth]);
+  // ── Fetch Flags ──────────────────────────────────────────────────────
+  const fetchFlags = useCallback(async () => {
+    setFlagsLoading(true);
+    try {
+      const data = await flagsApi.getFlags().then(r => r.data);
+      const flagMap: Record<string, boolean> = {};
+      data.forEach((f: any) => { flagMap[f.key] = f.enabled; });
+      setFlags(flagMap);
+    } catch (err) {
+      console.error('Failed to fetch flags:', err);
+    } finally {
+      setFlagsLoading(false);
+    }
+  }, []);
 
-  // ── Logs ─────────────────────────────────────────────────────────────
-  const fetchLogs = async () => {
+  // ── Fetch Production Health ──────────────────────────────────────────
+  const fetchProdHealth = useCallback(async () => {
+    setProdHealthLoading(true);
+    try {
+      const data = await productionApi.getHealth().then(r => r.data);
+      setProdHealth(data);
+    } catch (err) {
+      console.error('Failed to fetch production health:', err);
+    } finally {
+      setProdHealthLoading(false);
+    }
+  }, []);
+
+  // ── Fetch Logs ───────────────────────────────────────────────────────
+  const fetchLogs = useCallback(async () => {
     setLogsLoading(true);
     try {
-      // This would be a real API call in production
-      // For now, generate mock logs
-      const mockLogs = [
-        { type: 'success', message: 'Order #FP0012 paid successfully', time: new Date().toISOString() },
-        { type: 'error', message: 'Payment failed for order #FP0010', time: new Date().toISOString() },
-        { type: 'info', message: 'New order #FP0013 placed', time: new Date().toISOString() },
-        { type: 'warning', message: 'Delivery zone "Lekki" is at capacity', time: new Date().toISOString() },
-        { type: 'error', message: 'API timeout on /admin/system-health', time: new Date().toISOString() },
-        { type: 'success', message: 'Admin logged in from IP 192.168.1.1', time: new Date().toISOString() },
-      ];
-      setLogs(mockLogs);
-    } catch (err: any) {
+      const data = await logsApi.getLogs({ limit: 50 }).then(r => r.data);
+      setLogs(data);
+    } catch (err) {
+      console.error('Failed to fetch logs:', err);
       setLogs([]);
     } finally {
       setLogsLoading(false);
     }
-  };
+  }, []);
+
+  // ── Initial Load ────────────────────────────────────────────────────
+  useEffect(() => {
+    fetchHealth();
+    fetchFlags();
+    fetchProdHealth();
+    const id = setInterval(fetchHealth, 30000);
+    return () => clearInterval(id);
+  }, [fetchHealth, fetchFlags, fetchProdHealth]);
 
   useEffect(() => {
     if (showLogs) fetchLogs();
-  }, [showLogs]);
+  }, [showLogs, fetchLogs]);
 
   // ── Actions ──────────────────────────────────────────────────────────
   const runAction = async (actionId: string) => {
@@ -140,19 +137,20 @@ function DeveloperContent() {
     setActionResult(null);
     try {
       let result: any;
-      const endpoints: Record<string, string> = {
-        'clear-orders': '/admin/maintenance/clear-test-orders',
-        'clear-notifications': '/admin/maintenance/clear-notifications',
-        'clear-payments': '/admin/maintenance/clear-test-payments',
-        'clear-customers': '/admin/maintenance/clear-test-customers',
-        'clear-cache': '/admin/maintenance/clear-cache',
-        'recalculate-stats': '/admin/maintenance/recalculate-stats',
+      const actionMap: Record<string, () => Promise<any>> = {
+        'clear-orders': () => maintenanceApi.clearTestOrders().then(r => r.data),
+        'clear-notifications': () => maintenanceApi.clearNotifications().then(r => r.data),
+        'clear-payments': () => maintenanceApi.clearTestPayments().then(r => r.data),
+        'clear-customers': () => maintenanceApi.clearTestCustomers().then(r => r.data),
+        'clear-cache': () => maintenanceApi.clearCache().then(r => r.data),
+        'recalculate-stats': () => maintenanceApi.recalculateStats().then(r => r.data),
       };
-      if (endpoints[actionId]) {
-        result = await apiFetch(endpoints[actionId], 'DELETE');
+      if (actionMap[actionId]) {
+        result = await actionMap[actionId]();
       }
       setActionResult({ msg: result?.message || 'Action completed!', ok: true });
       fetchHealth();
+      fetchProdHealth();
     } catch (err: any) {
       setActionResult({ msg: err.message || 'Action failed.', ok: false });
     } finally {
@@ -161,16 +159,24 @@ function DeveloperContent() {
     }
   };
 
-  const toggleFlag = (key: keyof typeof flags) => {
-    setFlags((prev) => ({ ...prev, [key]: !prev[key] }));
-    setActionResult({ msg: `${key} toggled to ${!flags[key] ? 'ON' : 'OFF'}`, ok: true });
+  // ── Toggle Flag ──────────────────────────────────────────────────────
+  const toggleFlag = async (key: string) => {
+    setFlagsLoading(true);
+    try {
+      const data = await flagsApi.toggleFlag(key).then(r => r.data);
+      setFlags(prev => ({ ...prev, [key]: data.enabled }));
+      setActionResult({ msg: `${key} toggled to ${data.enabled ? 'ON' : 'OFF'}`, ok: true });
+    } catch (err: any) {
+      setActionResult({ msg: err.message || 'Failed to toggle flag', ok: false });
+    } finally {
+      setFlagsLoading(false);
+    }
   };
 
   const db = health?.database;
   const sys = health?.system;
 
   // ── Env Info ─────────────────────────────────────────────────────────
-  const env = process.env.NODE_ENV || 'development';
   const vercelEnv = process.env.NEXT_PUBLIC_VERCEL_ENV || 'development';
   const commitSha = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || 'N/A';
   const commitRef = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || 'main';
@@ -274,6 +280,39 @@ function DeveloperContent() {
         </div>
       </div>
 
+      {/* ===== PRODUCTION HEALTH ===== */}
+      <div className="card p-6">
+        <h2 className="font-bold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
+          <Server className="w-5 h-5 text-blue-700" /> Production Health
+        </h2>
+        {prodHealthLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-16 rounded-xl" />)}
+          </div>
+        ) : prodHealth ? (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+              <p className="text-xs text-gray-400">Status</p>
+              <p className="text-lg font-bold text-green-600 capitalize">{prodHealth.status || '—'}</p>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+              <p className="text-xs text-gray-400">Orders</p>
+              <p className="text-lg font-bold text-gray-900 dark:text-white">{prodHealth.stats?.orders || '—'}</p>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+              <p className="text-xs text-gray-400">Revenue</p>
+              <p className="text-lg font-bold text-gray-900 dark:text-white">₦{prodHealth.stats?.revenue?.toLocaleString() || '0'}</p>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+              <p className="text-xs text-gray-400">Uptime</p>
+              <p className="text-lg font-bold text-gray-900 dark:text-white">{Math.floor(prodHealth.uptime || 0)}s</p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">No production health data available</p>
+        )}
+      </div>
+
       {/* ===== MAINTENANCE ACTIONS ===== */}
       <div className="card p-6">
         <h2 className="font-bold text-gray-900 dark:text-white flex items-center gap-2 mb-1">
@@ -346,8 +385,8 @@ function DeveloperContent() {
             ) : (
               logs.map((log, i) => (
                 <div key={i} className={`p-3 rounded-xl text-sm flex items-start gap-3 ${log.type === 'error' ? 'bg-red-50 text-red-700' : log.type === 'warning' ? 'bg-yellow-50 text-yellow-700' : log.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-700'}`}>
-                  <span className="text-xs text-gray-400 whitespace-nowrap">{new Date(log.time).toLocaleTimeString('en-NG')}</span>
-                  <span>{log.message}</span>
+                  <span className="text-xs text-gray-400 whitespace-nowrap">{new Date(log.createdAt || log.time).toLocaleTimeString('en-NG')}</span>
+                  <span>{log.message || log.action}</span>
                 </div>
               ))
             )}
@@ -363,18 +402,19 @@ function DeveloperContent() {
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {([
-            { key: 'maintenanceMode', label: 'Maintenance Mode' },
-            { key: 'demoMode', label: 'Demo Mode' },
-            { key: 'onlineOrdering', label: 'Online Ordering' },
-            { key: 'pickup', label: 'Pickup' },
-            { key: 'delivery', label: 'Delivery' },
-            { key: 'notifications', label: 'Notifications' },
-          ] as const).map(({ key, label }) => (
+            'maintenanceMode',
+            'demoMode',
+            'onlineOrdering',
+            'pickup',
+            'delivery',
+            'notifications',
+          ]).map((key) => (
             <FeatureToggle
               key={key}
-              label={label}
-              enabled={flags[key]}
+              label={key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+              enabled={flags[key] || false}
               onChange={() => toggleFlag(key)}
+              loading={flagsLoading}
             />
           ))}
         </div>
