@@ -12,7 +12,6 @@ import { adminApi, ordersApi } from '@/lib/api';
 import { useQuery } from '@tanstack/react-query';
 
 const adminNavItems = [
-  { href: "/admin/developer", label: "Advanced Settings", icon: Settings },
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/admin/orders', label: 'Orders', icon: ShoppingBag },
   { href: '/admin/order-history', label: 'Order History', icon: History },
