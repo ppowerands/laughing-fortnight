@@ -130,8 +130,29 @@ export const customersApi = {
   toggle: (id: string) => api.patch(`/admin/users/${id}/toggle`),
 };
 
+// ─── MAINTENANCE ──────────────────────────────────────────────────────
 export const maintenanceApi = {
   getHealth: () => api.get('/admin/system-health'),
   clearTestOrders: () => api.delete('/admin/maintenance/clear-test-orders'),
   clearNotifications: () => api.delete('/admin/maintenance/clear-notifications'),
+  clearTestPayments: () => api.delete('/admin/maintenance/clear-test-payments'),
+  clearTestCustomers: () => api.delete('/admin/maintenance/clear-test-customers'),
+  clearCache: () => api.delete('/admin/maintenance/clear-cache'),
+  recalculateStats: () => api.post('/admin/maintenance/recalculate-stats'),
+};
+
+// ─── LOGS ─────────────────────────────────────────────────────────────
+export const logsApi = {
+  getLogs: (params?: { action?: string; limit?: number }) => api.get('/admin/logs', { params }),
+};
+
+// ─── FEATURE FLAGS ────────────────────────────────────────────────────
+export const flagsApi = {
+  getFlags: () => api.get('/admin/flags'),
+  toggleFlag: (key: string) => api.patch(`/admin/flags/${key}/toggle`),
+};
+
+// ─── PRODUCTION MONITORING ───────────────────────────────────────────
+export const productionApi = {
+  getHealth: () => api.get('/admin/production/health'),
 };
